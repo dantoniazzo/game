@@ -8,6 +8,11 @@ export default [
                     path: "/models/brute.glb",
                 },
                 {
+                    name: "monster",
+                    type: "glbModel",
+                    path: "/models/monster.glb",
+                },
+                {
                     name: "cloudTexture",
                     type: "imageTexture",
                     path: "textures/cloud.jpg",

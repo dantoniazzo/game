@@ -40,7 +40,6 @@ export default class Camera {
         );
 
         this.perspectiveCamera.position.set(0, 3, 6);
-        this.perspectiveCamera.rotation.y = Math.PI / 2;
 
         this.scene.add(this.perspectiveCamera);
     }
@@ -55,7 +54,8 @@ export default class Camera {
 
     setPointerLockCamera() {
         // Spherical coordinate angles for third-person camera
-        this.angles = { horizontal: Math.PI / 2, vertical: 0.15 };
+        this.angles = { horizontal: 0, vertical: 0.15 };
+        this.pointerLockEnabled = false;
         this.target = new THREE.Vector3();
 
         this.DISTANCE = 6;
@@ -70,8 +70,10 @@ export default class Camera {
         this.mouseMovement = { x: 0, y: 0 };
         this.moveTimeout = null;
 
-        // Request pointer lock on click
-        const onClick = () => this.canvas.requestPointerLock();
+        // Request pointer lock on click (gated until game starts)
+        const onClick = () => {
+            if (this.pointerLockEnabled) this.canvas.requestPointerLock();
+        };
         this.canvas.addEventListener("click", onClick);
 
         // Track mouse movement while pointer is locked
@@ -105,6 +107,8 @@ export default class Camera {
     }
 
     update() {
+        if (this.frozen) return;
+
         if (this.isMobile) {
             if (this.controls && this.controls.enabled) {
                 this.controls.update();
