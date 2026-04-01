@@ -16,8 +16,19 @@ export default class Camera {
         };
         this.controls = null;
 
+        this.isMobile =
+            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+                navigator.userAgent
+            ) ||
+            ("ontouchstart" in window && navigator.maxTouchPoints > 0);
+
         this.setPerspectiveCamera();
-        this.setOrbitControls();
+
+        if (this.isMobile) {
+            this.setOrbitControls();
+        } else {
+            this.setPointerLockCamera();
+        }
     }
 
     setPerspectiveCamera() {
@@ -37,21 +48,55 @@ export default class Camera {
     setOrbitControls() {
         this.controls = new OrbitControls(this.perspectiveCamera, this.canvas);
         this.controls.enableDamping = true;
-        // this.controls.enableZoom = true;
         this.controls.enablePan = false;
-        // this.controls.maxPolarAngle = Math.PI / 2;
-        // this.controls.minDistance = 0.1;
         this.controls.maxDistance = 6;
-
         this.controls.dampingFactor = 0.1;
     }
 
+    setPointerLockCamera() {
+        // Spherical coordinate angles for third-person camera
+        this.angles = { horizontal: Math.PI / 2, vertical: 0.15 };
+        this.target = new THREE.Vector3();
+
+        this.DISTANCE = 6;
+        this.LOOK_AT_HEIGHT = 0.9;
+        this.MOUSE_SENSITIVITY = 0.002;
+        this.MIN_VERTICAL = 0.1;
+        this.MAX_VERTICAL = 0.51;
+
+        this._cameraPos = new THREE.Vector3();
+        this._lookAt = new THREE.Vector3();
+
+        this.mouseMovement = { x: 0, y: 0 };
+        this.moveTimeout = null;
+
+        // Request pointer lock on click
+        const onClick = () => this.canvas.requestPointerLock();
+        this.canvas.addEventListener("click", onClick);
+
+        // Track mouse movement while pointer is locked
+        document.addEventListener("mousemove", (e) => {
+            if (document.pointerLockElement) {
+                this.mouseMovement.x = e.movementX;
+                this.mouseMovement.y = e.movementY;
+
+                if (this.moveTimeout) clearTimeout(this.moveTimeout);
+                this.moveTimeout = setTimeout(() => {
+                    this.mouseMovement.x = 0;
+                    this.mouseMovement.y = 0;
+                }, 50);
+            }
+        });
+
+        this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
+
     enableOrbitControls() {
-        this.controls.enabled = true;
+        if (this.controls) this.controls.enabled = true;
     }
 
     disableOrbitControls() {
-        this.controls.enabled = false;
+        if (this.controls) this.controls.enabled = false;
     }
 
     onResize() {
@@ -60,9 +105,39 @@ export default class Camera {
     }
 
     update() {
-        if (!this.controls) return;
-        if (this.controls.enabled === true) {
-            this.controls.update();
+        if (this.isMobile) {
+            if (this.controls && this.controls.enabled) {
+                this.controls.update();
+            }
+        } else {
+            this.updatePointerLockCamera();
         }
+    }
+
+    updatePointerLockCamera() {
+        if (this.mouseMovement.x !== 0 || this.mouseMovement.y !== 0) {
+            this.angles.horizontal -=
+                this.mouseMovement.x * this.MOUSE_SENSITIVITY;
+            this.angles.vertical = THREE.MathUtils.clamp(
+                this.angles.vertical +
+                    this.mouseMovement.y * this.MOUSE_SENSITIVITY,
+                this.MIN_VERTICAL,
+                this.MAX_VERTICAL
+            );
+        }
+
+        const { horizontal: theta, vertical: phi } = this.angles;
+        const { x, y, z } = this.target;
+        const centerY = y + this.LOOK_AT_HEIGHT;
+        const cosPhi = Math.cos(phi);
+
+        this._cameraPos.set(
+            x + this.DISTANCE * Math.sin(theta) * cosPhi,
+            centerY + this.DISTANCE * Math.sin(phi),
+            z + this.DISTANCE * Math.cos(theta) * cosPhi
+        );
+
+        this.perspectiveCamera.position.copy(this._cameraPos);
+        this.perspectiveCamera.lookAt(this._lookAt.set(x, centerY, z));
     }
 }

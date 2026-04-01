@@ -406,9 +406,13 @@ export default class Player {
         this.player.collider.translate(deltaPosition);
         this.playerCollisions();
 
-        this.player.body.position.sub(this.camera.controls.target);
-        this.camera.controls.target.copy(this.player.collider.end);
-        this.player.body.position.add(this.player.collider.end);
+        if (this.camera.isMobile) {
+            this.player.body.position.sub(this.camera.controls.target);
+            this.camera.controls.target.copy(this.player.collider.end);
+            this.player.body.position.add(this.player.collider.end);
+        } else {
+            this.camera.target.copy(this.player.collider.end);
+        }
 
         this.player.body.updateMatrixWorld();
 
