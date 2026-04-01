@@ -131,20 +131,12 @@ const grassFragmentShader = /* glsl */ `
     varying float vRelativeY;
 
     void main() {
-        vec3 cloudPosition = vPosition;
-        cloudPosition = cloudPosition / 90.0;
-        cloudPosition.x += uTime * 0.05;
-        cloudPosition.z += uTime * 0.04;
-
         vec3 mixOne = mix(vBaseColor, vMiddleColor, vRelativeY);
         vec3 mixTwo = mix(vMiddleColor, vTipColor, vRelativeY);
         vec3 bladeColor = mix(mixOne, mixTwo, vRelativeY);
 
-        vec3 cloudSample = texture2D(uCloud, cloudPosition.xz).rgb;
-        float cloudIntensity = 1.0 - cloudSample.r;
-
-        bladeColor = mix(bladeColor * 0.7, bladeColor, vRelativeY);
-        bladeColor = mix(bladeColor, bladeColor * 0.5, cloudIntensity * 0.4);
+        // Darken base, brighten tips
+        bladeColor = mix(bladeColor * 0.8, bladeColor, vRelativeY);
 
         float alpha = texture2D(alphaMap, vUv).r;
         if (alpha < 0.15) discard;

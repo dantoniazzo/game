@@ -5,10 +5,10 @@ import { GrassGeometry, GrassMaterial } from "./Grass.js";
 
 const GROUND_COLOR = "#1f0e01";
 const GRASS_WIDTH = 50;
-const GRASS_INSTANCES = 50000;
-const BLADE_WIDTH = 0.04;
-const BLADE_HEIGHT = 0.3;
-const BLADE_JOINTS = 4;
+const GRASS_INSTANCES = 240000;
+const BLADE_WIDTH = 0.02;
+const BLADE_HEIGHT = 0.15;
+const BLADE_JOINTS = 3;
 
 const simplexNoise = createNoise2D();
 

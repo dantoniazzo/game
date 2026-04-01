@@ -20,7 +20,7 @@ export default class Avatar {
     }
 
     setAvatar() {
-        this.avatar.scale.set(0.99, 0.99, 0.99);
+        this.avatar.scale.set(1.3, 1.3, 1.3);
         this.setAnimation();
         this.scene.add(this.avatar);
 
