@@ -7,6 +7,12 @@ import elements from "../../Utils/functions/elements.js";
 
 import Avatar from "./Avatar.js";
 
+const JUMP_ANIMS = ["jump", "running-jump"];
+const JUMP_DELAY = 0.5;
+const CROSSFADE_DURATION = 0.2;
+const JUMP_IN_CROSSFADE = 0.1;
+const JUMP_OUT_CROSSFADE = 0.5;
+
 export default class Player {
     constructor() {
         this.experience = new Experience();
@@ -37,7 +43,6 @@ export default class Player {
         this.player.body = this.camera.perspectiveCamera;
         this.player.animation = "idle";
 
-        this.jumpOnce = false;
         this.player.onFloor = false;
         this.player.gravity = 60;
 
@@ -84,6 +89,12 @@ export default class Player {
         };
 
         this.joystickVector = new THREE.Vector3();
+
+        // Jump state
+        this.crouchTimer = -1;
+        this.liftoffFrames = 0;
+        this.jumpAnim = "jump";
+        this.jumpReady = false;
     }
 
     setJoyStick() {
@@ -109,9 +120,9 @@ export default class Player {
 
         this.socket.on("setAvatarSkin", (avatarSkin, id) => {
             if (!this.avatar && id === this.socket.id) {
-                this.player.avatarSkin = avatarSkin;
+                this.player.avatarSkin = "brute";
                 this.avatar = new Avatar(
-                    this.resources.items[avatarSkin],
+                    this.resources.items.brute,
                     this.scene
                 );
                 this.updatePlayerSocket();
@@ -136,7 +147,7 @@ export default class Player {
                                 const name = player.name.substring(0, 25);
 
                                 const newAvatar = new Avatar(
-                                    this.resources.items[player.avatarSkin],
+                                    this.resources.items.brute,
                                     this.scene,
                                     name,
                                     player.id
@@ -210,77 +221,61 @@ export default class Player {
         }, 20);
     }
 
+    isMoving() {
+        return (
+            this.actions.forward ||
+            this.actions.backward ||
+            this.actions.left ||
+            this.actions.right ||
+            this.actions.movingJoyStick
+        );
+    }
+
     onKeyDown = (e) => {
         if (document.activeElement === this.domElements.messageInput) return;
 
-        if (e.code === "KeyW" || e.code === "ArrowUp") {
+        if (e.code === "KeyW" || e.code === "ArrowUp")
             this.actions.forward = true;
-        }
-        if (e.code === "KeyS" || e.code === "ArrowDown") {
+        if (e.code === "KeyS" || e.code === "ArrowDown")
             this.actions.backward = true;
-        }
-        if (e.code === "KeyA" || e.code === "ArrowLeft") {
+        if (e.code === "KeyA" || e.code === "ArrowLeft")
             this.actions.left = true;
-        }
-        if (e.code === "KeyD" || e.code === "ArrowRight") {
+        if (e.code === "KeyD" || e.code === "ArrowRight")
             this.actions.right = true;
-        }
-        if (!this.actions.run && !this.actions.jump) {
-            this.player.animation = "walking";
-        }
+        if (e.code === "ShiftLeft") this.actions.run = true;
 
-        if (e.code === "KeyO") {
-            this.player.animation = "dancing";
-        }
-
-        if (e.code === "ShiftLeft") {
-            this.actions.run = true;
-            this.player.animation = "running";
-        }
-
-        if (e.code === "Space" && !this.actions.jump && this.player.onFloor) {
+        if (
+            e.code === "Space" &&
+            !this.actions.jump &&
+            this.player.onFloor &&
+            this.crouchTimer < 0 &&
+            this.liftoffFrames === 0
+        ) {
             this.actions.jump = true;
-            this.player.animation = "jumping";
-            this.jumpOnce = true;
+
+            if (this.isMoving()) {
+                // Walking or running jump — immediate impulse
+                this.jumpAnim = "running-jump";
+                this.jumpReady = true;
+            } else {
+                // Standing jump — crouch wind-up before impulse
+                this.jumpAnim = "jump";
+                this.crouchTimer = 0;
+            }
         }
     };
 
     onKeyUp = (e) => {
-        if (e.code === "KeyW" || e.code === "ArrowUp") {
+        if (e.code === "KeyW" || e.code === "ArrowUp")
             this.actions.forward = false;
-        }
-        if (e.code === "KeyS" || e.code === "ArrowDown") {
+        if (e.code === "KeyS" || e.code === "ArrowDown")
             this.actions.backward = false;
-        }
-        if (e.code === "KeyA" || e.code === "ArrowLeft") {
+        if (e.code === "KeyA" || e.code === "ArrowLeft")
             this.actions.left = false;
-        }
-        if (e.code === "KeyD" || e.code === "ArrowRight") {
+        if (e.code === "KeyD" || e.code === "ArrowRight")
             this.actions.right = false;
-        }
-
-        if (e.code === "ShiftLeft") {
-            this.actions.run = false;
-        }
-
-        if (this.player.onFloor) {
-            if (this.actions.run) {
-                this.player.animation = "running";
-            } else if (
-                this.actions.forward ||
-                this.actions.backward ||
-                this.actions.left ||
-                this.actions.right
-            ) {
-                this.player.animation = "walking";
-            } else {
-                this.player.animation = "idle";
-            }
-        }
-
-        if (e.code === "Space") {
-            this.actions.jump = false;
-        }
+        if (e.code === "ShiftLeft") this.actions.run = false;
+        if (e.code === "Space") this.actions.jump = false;
     };
 
     playerCollisions() {
@@ -378,21 +373,52 @@ export default class Player {
             );
         }
 
+        // --- Jump physics ---
         if (this.player.onFloor) {
-            if (this.actions.jump && this.jumpOnce) {
+            // Running/walking jump: immediate impulse
+            if (this.jumpReady) {
                 this.player.velocity.y = 12;
+                this.jumpReady = false;
+                this.liftoffFrames = 10;
             }
-            this.jumpOnce = false;
+
+            // Standing jump: crouch delay then impulse
+            if (this.crouchTimer >= 0) {
+                this.crouchTimer += this.time.delta;
+                if (this.crouchTimer >= JUMP_DELAY) {
+                    this.player.velocity.y = 12;
+                    this.crouchTimer = -1;
+                    this.liftoffFrames = 10;
+                }
+            }
+        } else {
+            // Fell off ledge during crouch — cancel
+            if (this.crouchTimer >= 0) {
+                this.crouchTimer = -1;
+            }
+            this.jumpReady = false;
         }
 
+        // Liftoff counter: keeps jump state active while physics hasn't lifted yet
+        if (this.liftoffFrames > 0) {
+            if (!this.player.onFloor) {
+                this.liftoffFrames = 0;
+            } else {
+                this.liftoffFrames--;
+            }
+        }
+
+        // --- Gravity & damping ---
         let damping = Math.exp(-15 * this.time.delta) - 1;
 
         if (!this.player.onFloor) {
-            if (this.player.animation === "jumping") {
+            const inJumpAnim = JUMP_ANIMS.includes(this.player.animation);
+            if (inJumpAnim) {
                 this.player.velocity.y -=
                     this.player.gravity * 0.7 * this.time.delta;
             } else {
-                this.player.velocity.y -= this.player.gravity * this.time.delta;
+                this.player.velocity.y -=
+                    this.player.gravity * this.time.delta;
             }
             damping *= 0.1;
         }
@@ -418,41 +444,6 @@ export default class Player {
 
         if (this.player.body.position.y < -20) {
             this.spawnPlayerOutOfBounds();
-        }
-    }
-
-    setInteractionObjects(interactionObjects) {
-        this.player.interactionObjects = interactionObjects;
-    }
-
-    getgetCameraLookAtDirectionalVector() {
-        const direction = new THREE.Vector3(0, 0, -1);
-        return direction.applyQuaternion(
-            this.camera.perspectiveCamera.quaternion
-        );
-    }
-
-    updateRaycaster() {
-        this.player.raycaster.ray.origin.copy(
-            this.camera.perspectiveCamera.position
-        );
-
-        this.player.raycaster.ray.direction.copy(
-            this.getgetCameraLookAtDirectionalVector()
-        );
-
-        const intersects = this.player.raycaster.intersectObjects(
-            this.player.interactionObjects.children
-        );
-
-        if (intersects.length === 0) {
-            this.currentIntersectObject = "";
-        } else {
-            this.currentIntersectObject = intersects[0].object.name;
-        }
-
-        if (this.currentIntersectObject !== this.previousIntersectObject) {
-            this.previousIntersectObject = this.currentIntersectObject;
         }
     }
 
@@ -546,190 +537,49 @@ export default class Player {
         }
     }
 
-    updateAvatarAnimation() {
-        if (this.player.animation !== this.avatar.animation) {
-            if (
-                this.actions.left &&
-                this.actions.right &&
-                !this.actions.forward &&
-                !this.actions.backward
-            ) {
-                this.player.animation = "idle";
-            }
+    updateDesiredAnimation() {
+        const playingJump = JUMP_ANIMS.includes(this.player.animation);
 
-            if (
-                !this.actions.left &&
-                !this.actions.right &&
-                this.actions.forward &&
-                this.actions.backward
-            ) {
-                this.player.animation = "idle";
-            }
+        let jumpAnimDone = false;
+        if (playingJump) {
+            jumpAnimDone = this.avatar.animation.isCurrentDone();
+        }
 
-            if (
-                this.actions.left &&
-                this.actions.right &&
-                this.actions.forward &&
-                this.actions.backward
-            ) {
-                this.player.animation = "idle";
-            }
+        const isCrouching = this.crouchTimer >= 0;
+        const isLiftingOff = this.liftoffFrames > 0;
 
-            if (
-                !this.actions.left &&
-                !this.actions.right &&
-                !this.actions.forward &&
-                !this.actions.backward &&
-                this.actions.run
-            ) {
-                this.player.animation = "idle";
-            }
+        // Stay in jump until animation finishes AND character has landed.
+        // Only enter jump from an actual jump initiation (crouch/liftoff), not from onFloor flicker.
+        const inJump = playingJump
+            ? !jumpAnimDone || !this.player.onFloor
+            : isCrouching || isLiftingOff;
 
-            if (
-                this.actions.run &&
-                this.actions.left &&
-                this.actions.right &&
-                this.actions.forward &&
-                !this.actions.backward
-            ) {
-                this.player.animation = "running";
-            }
-
-            if (
-                this.actions.run &&
-                this.actions.left &&
-                this.actions.right &&
-                this.actions.backward &&
-                !this.actions.forward
-            ) {
-                this.player.animation = "running";
-            }
-
-            if (
-                this.actions.run &&
-                !this.actions.left &&
-                !this.actions.right &&
-                this.actions.forward &&
-                !this.actions.backward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "running";
-            }
-
-            if (
-                this.actions.run &&
-                !this.actions.left &&
-                !this.actions.right &&
-                this.actions.backward &&
-                !this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "running";
-            }
-
-            if (
-                this.actions.run &&
-                !this.actions.left &&
-                !this.actions.right &&
-                this.actions.backward &&
-                this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "idle";
-            }
-
-            if (
-                this.actions.run &&
-                this.actions.left &&
-                this.actions.right &&
-                !this.actions.backward &&
-                !this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "idle";
-            }
-
-            if (
-                this.actions.run &&
-                !this.actions.left &&
-                this.actions.right &&
-                !this.actions.backward &&
-                this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "running";
-            }
-
-            if (
-                this.actions.run &&
-                this.actions.left &&
-                !this.actions.right &&
-                this.actions.backward &&
-                !this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "running";
-            }
-            if (
-                this.actions.run &&
-                this.actions.left &&
-                !this.actions.right &&
-                !this.actions.backward &&
-                !this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "running";
-            }
-            if (
-                this.actions.run &&
-                !this.actions.left &&
-                this.actions.right &&
-                !this.actions.backward &&
-                !this.actions.forward &&
-                this.player.animation !== "jumping"
-            ) {
-                this.player.animation = "running";
-            }
-
-            if (
-                this.actions.run &&
-                !this.actions.left &&
-                !this.actions.right &&
-                !this.actions.backward &&
-                !this.actions.forward &&
-                this.actions.jump
-            ) {
-                this.player.animation = "jumping";
-            }
-
-            if (this.player.animation === "jumping" && !this.jumpOnce) {
-                if (this.player.onFloor) {
-                    if (this.actions.run) {
-                        this.player.animation = "running";
-                    } else if (
-                        this.actions.forward ||
-                        this.actions.backward ||
-                        this.actions.left ||
-                        this.actions.right
-                    ) {
-                        this.player.animation = "walking";
-                    } else {
-                        this.player.animation = "idle";
-                    }
-                }
-            }
-
-            this.avatar.animation.play(this.player.animation);
+        let desired;
+        if (inJump) {
+            desired = this.jumpAnim;
+        } else if (this.isMoving()) {
+            desired = this.actions.run ? "run" : "walk";
         } else {
-            this.avatar.animation.play("idle");
+            desired = "idle";
+        }
+
+        if (desired !== this.player.animation) {
+            const enteringJump = JUMP_ANIMS.includes(desired);
+            const leavingJump = JUMP_ANIMS.includes(this.player.animation);
+
+            const fade = enteringJump
+                ? JUMP_IN_CROSSFADE
+                : leavingJump
+                  ? JUMP_OUT_CROSSFADE
+                  : CROSSFADE_DURATION;
+
+            this.avatar.animation.play(desired, fade);
+            this.player.animation = desired;
         }
     }
 
     updateCameraPosition() {
-        if (
-            this.player.animation !== "idle" &&
-            this.player.animation !== "dancing"
-        ) {
+        if (this.isMoving()) {
             const cameraAngleFromPlayer = Math.atan2(
                 this.player.body.position.x - this.avatar.avatar.position.x,
                 this.player.body.position.z - this.avatar.avatar.position.z
@@ -751,7 +601,7 @@ export default class Player {
             this.updateColliderMovement();
             this.updateAvatarPosition();
             this.updateAvatarRotation();
-            this.updateAvatarAnimation();
+            this.updateDesiredAnimation();
             this.updateCameraPosition();
             this.updateOtherPlayers();
         }

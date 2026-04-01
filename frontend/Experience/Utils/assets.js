@@ -3,14 +3,9 @@ export default [
         westgate: {
             assets: [
                 {
-                    name: "male",
+                    name: "brute",
                     type: "glbModel",
-                    path: "/models/asian_male_animated.glb",
-                },
-                {
-                    name: "female",
-                    type: "glbModel",
-                    path: "/models/asian_female_animated.glb",
+                    path: "/models/brute.glb",
                 },
                 {
                     name: "cloudTexture",

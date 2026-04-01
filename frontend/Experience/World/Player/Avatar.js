@@ -2,6 +2,8 @@ import * as THREE from "three";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import Nametag from "./Nametag.js";
 
+const JUMP_ANIMS = ["jump", "running-jump"];
+
 export default class Avatar {
     constructor(avatar, scene, name = "Anonymous", id) {
         this.scene = scene;
@@ -18,7 +20,6 @@ export default class Avatar {
     }
 
     setAvatar() {
-        this.speedAdjustment = 1;
         this.avatar.scale.set(0.99, 0.99, 0.99);
         this.setAnimation();
         this.scene.add(this.avatar);
@@ -32,56 +33,50 @@ export default class Avatar {
         this.animation = {};
 
         this.animation.mixer = new THREE.AnimationMixer(this.avatar);
-
         this.animation.actions = {};
+        this.animation.clips = {};
 
-        this.animation.actions.dancing = this.animation.mixer.clipAction(
-            this.avatar.animations[0]
-        );
+        for (const clip of this.avatar.animations) {
+            this.animation.clips[clip.name] = clip;
+            const action = this.animation.mixer.clipAction(clip);
 
-        this.animation.actions.idle = this.animation.mixer.clipAction(
-            this.avatar.animations[1]
-        );
-        this.animation.actions.jumping = this.animation.mixer.clipAction(
-            this.avatar.animations[2]
-        );
+            if (JUMP_ANIMS.includes(clip.name)) {
+                action.setLoop(THREE.LoopOnce, 1);
+                action.clampWhenFinished = true;
+            }
 
-        this.animation.actions.running = this.animation.mixer.clipAction(
-            this.avatar.animations[3]
-        );
-        this.animation.actions.walking = this.animation.mixer.clipAction(
-            this.avatar.animations[4]
-        );
-        this.animation.actions.waving = this.animation.mixer.clipAction(
-            this.avatar.animations[5]
-        );
+            this.animation.actions[clip.name] = action;
+        }
 
-        this.animation.actions.current = this.animation.actions.idle;
-        this.animation.actions.current.play();
+        this.animation.current = "idle";
+        if (this.animation.actions.idle) {
+            this.animation.actions.idle.play();
+        }
 
-        this.animation.play = (name) => {
+        this.animation.play = (name, fadeDuration = 0.2) => {
             const newAction = this.animation.actions[name];
-            const oldAction = this.animation.actions.current;
+            const oldAction = this.animation.actions[this.animation.current];
 
-            if (oldAction === newAction) {
-                return;
-            }
-
-            if (this.animation.actions.current === "jumping") {
-                this.speedAdjustment = 1.5;
-            } else {
-                this.speedAdjustment = 1.0;
-            }
+            if (!newAction || this.animation.current === name) return;
 
             newAction.reset();
+            if (oldAction && oldAction !== newAction) {
+                newAction.crossFadeFrom(oldAction, fadeDuration, false);
+            }
             newAction.play();
-            newAction.crossFadeFrom(oldAction, 0.2);
 
-            this.animation.actions.current = newAction;
+            this.animation.current = name;
+        };
+
+        this.animation.isCurrentDone = () => {
+            const clip = this.animation.clips[this.animation.current];
+            const action = this.animation.actions[this.animation.current];
+            if (!clip || !action) return true;
+            return action.time >= clip.duration - 0.05;
         };
 
         this.animation.update = (time) => {
-            this.animation.mixer.update(time * this.speedAdjustment);
+            this.animation.mixer.update(time);
         };
     }
 }
