@@ -39,7 +39,7 @@ export default class Camera {
             this.params.far
         );
 
-        this.perspectiveCamera.position.set(17.8838, 1.2 + 10, -3.72508);
+        this.perspectiveCamera.position.set(0, 3, 6);
         this.perspectiveCamera.rotation.y = Math.PI / 2;
 
         this.scene.add(this.perspectiveCamera);

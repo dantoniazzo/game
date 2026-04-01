@@ -62,8 +62,8 @@ export default class Player {
         this.player.direction = new THREE.Vector3();
 
         this.player.collider = new Capsule(
-            new THREE.Vector3(),
-            new THREE.Vector3(),
+            new THREE.Vector3(0, 2, 0),
+            new THREE.Vector3(0, 2 + this.player.height, 0),
             0.35
         );
 
@@ -332,7 +332,7 @@ export default class Player {
     resize() {}
 
     spawnPlayerOutOfBounds() {
-        const spawnPos = new THREE.Vector3(-22.4437, 8 + 5, -15.0529);
+        const spawnPos = new THREE.Vector3(0, 3, 0);
         this.player.velocity = this.player.spawn.velocity;
 
         this.player.collider.start.copy(spawnPos);

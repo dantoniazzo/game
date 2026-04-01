@@ -5,50 +5,23 @@ export default class Environment {
     constructor() {
         this.experience = new Experience();
         this.scene = this.experience.scene;
-        this.resources = this.experience.resources;
 
         this.setEnvironment();
     }
 
     setEnvironment() {
-        this.environmentMap = {};
-        this.environmentMap.intensity = 0;
-        this.environmentMap.texture = this.resources.items.environment;
-        this.environmentMap.texture.outputColorSpace = THREE.SRGBColorSpace;
+        this.scene.background = new THREE.Color("#87ceeb");
+        this.scene.fog = new THREE.Fog("#87ceeb", 30, 60);
 
-        this.scene.background = this.environmentMap.texture;
+        const ambient = new THREE.AmbientLight(0xffffff, 1.5);
+        this.scene.add(ambient);
 
-        const light = new THREE.AmbientLight(0x404040, 4); // soft white light
-        this.scene.add(light);
-
-        this.sunLight = new THREE.DirectionalLight("#ffffff", 1.5);
-
-        this.sunLight.position.set(1.5, 7, -3);
+        this.sunLight = new THREE.DirectionalLight("#ffffff", 2);
+        this.sunLight.position.set(10, 15, 10);
         this.scene.add(this.sunLight);
 
-        // this.scene.environment = this.environmentMap.texture;
-
-        // console.log(this.scene);
-
-        // this.environmentMap.updateMaterials = () => {
-        //     this.scene.children.forEach((child) => {
-        //         if (child instanceof THREE.Group) {
-        //             console.log(child.children[0]);
-        //             if (
-        //                 child.children[0] instanceof THREE.Mesh &&
-        //                 child.children[0].material instanceof
-        //                     THREE.MeshPhysicalMaterial
-        //             ) {
-        //                 child.children[0].material.envMap =
-        //                     this.environmentMap.texture;
-        //                 child.children[0].material.envMapIntensity =
-        //                     this.environmentMap.intensity;
-        //                 child.children[0].material.needsUpdate = true;
-        //             }
-        //         }
-        //     });
-        // };
-        // this.environmentMap.updateMaterials();
+        const hemiLight = new THREE.HemisphereLight("#87ceeb", "#228b22", 0.8);
+        this.scene.add(hemiLight);
     }
 
     update() {}

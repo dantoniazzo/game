@@ -6,7 +6,7 @@ import { Octree } from "three/examples/jsm/math/Octree";
 
 import Player from "./Player/Player.js";
 
-import Westgate from "./Westgate.js";
+import GrassWorld from "./GrassWorld.js";
 import Environment from "./Environment.js";
 
 export default class World extends EventEmitter {
@@ -21,7 +21,7 @@ export default class World extends EventEmitter {
 
         this.resources.on("ready", () => {
             if (this.player === null) {
-                this.westgate = new Westgate();
+                this.grassWorld = new GrassWorld();
                 this.player = new Player();
                 this.environment = new Environment();
             }
@@ -29,6 +29,7 @@ export default class World extends EventEmitter {
     }
 
     update() {
+        if (this.grassWorld) this.grassWorld.update();
         if (this.player) this.player.update();
     }
 }
