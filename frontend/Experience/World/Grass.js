@@ -180,7 +180,7 @@ export class GrassMaterial extends THREE.ShaderMaterial {
 }
 
 export class GrassGeometry extends THREE.InstancedBufferGeometry {
-    constructor({ bladeWidth, bladeHeight, bladeJoints, width, instances, getGroundHeight }) {
+    constructor({ bladeWidth, bladeHeight, bladeJoints, instances, getGroundHeight, area }) {
         super();
 
         this.getGroundHeight = getGroundHeight;
@@ -192,7 +192,7 @@ export class GrassGeometry extends THREE.InstancedBufferGeometry {
             bladeJoints
         ).translate(0, bladeHeight / 2, 0);
 
-        const attributes = this.computeGrassAttributes(instances, width);
+        const attributes = this.computeGrassAttributes(instances, area);
 
         this.index = baseGeometry.index;
 
@@ -208,13 +208,16 @@ export class GrassGeometry extends THREE.InstancedBufferGeometry {
         this.setAttribute("middleColor", new THREE.InstancedBufferAttribute(attributes.middleColor, 3));
         this.setAttribute("tipColor", new THREE.InstancedBufferAttribute(attributes.tipColor, 3));
 
+        const centerX = (area.minX + area.maxX) / 2;
+        const centerZ = (area.minZ + area.maxZ) / 2;
+        const halfSize = Math.max(area.maxX - area.minX, area.maxZ - area.minZ) / 2;
         this.boundingSphere = new THREE.Sphere(
-            new THREE.Vector3(),
-            (Math.sqrt(2) * width) / 2
+            new THREE.Vector3(centerX, 0, centerZ),
+            halfSize * Math.SQRT2 + 10
         );
     }
 
-    computeGrassAttributes(instances, width) {
+    computeGrassAttributes(instances, area) {
         const tipColor = [];
         const middleColor = [];
         const baseColor = [];
@@ -234,8 +237,8 @@ export class GrassGeometry extends THREE.InstancedBufferGeometry {
         const max = 0.25;
 
         for (let i = 0; i < instances; i++) {
-            const offsetX = Math.random() * width - width / 2;
-            const offsetZ = Math.random() * width - width / 2;
+            const offsetX = area.minX + Math.random() * (area.maxX - area.minX);
+            const offsetZ = area.minZ + Math.random() * (area.maxZ - area.minZ);
             const offsetY = this.getGroundHeight(offsetX, offsetZ);
             offsets.push(offsetX, offsetY, offsetZ);
 
