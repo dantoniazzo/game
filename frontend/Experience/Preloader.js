@@ -1,296 +1,152 @@
-import * as THREE from "three";
 import Experience from "./Experience.js";
-
-import lerp from "./Utils/functions/lerp.js";
-import elements from "./Utils/functions/elements.js";
-
-import gsap from "gsap";
 
 export default class Preloader {
     constructor() {
         this.experience = new Experience();
         this.resources = this.experience.resources;
+        this.socket = this.experience.socket;
 
-        this.matchmedia = gsap.matchMedia();
+        this.ready = false;
+        this.nameEntered = false;
 
-        this.loaded = 0;
-        this.queue = 0;
-
-        this.counter = 0;
-        this.amountDone = 0;
-
-        this.domElements = elements({
-            preloader: ".preloader",
-            text1: ".preloader-percentage1",
-            text2: ".preloader-percentage2",
-            progressBar: ".progress-bar",
-            svgLogo: ".svgLogo",
-            progressBarContainer: ".progress-bar-container",
-            progressWrapper: ".progress-wrapper",
-            preloaderTitle: ".preloader-title",
-            preloaderWrapper: ".preloader-wrapper",
-            welcomeTitle: ".welcome-title",
-            nameForm: ".name-form",
-            nameInput: "#name-input",
-            nameInputButton: "#name-input-button",
-            characterSelectTitle: ".character-select-title",
-            avatarWrapper: ".avatar-img-wrapper",
-            avatarLeftImg: ".avatar-left",
-            avatarRightImg: ".avatar-right",
-            customizeButton: ".customize-character-btn",
-            description: ".description",
-        });
-
-        // **** This is for updating a percentage ****
-        this.resources.on("loading", (loaded, queue) => {
-            this.updateProgress(loaded, queue);
-        });
+        this.createElement();
 
         this.resources.on("ready", () => {
-            this.playIntro();
-        });
-
-        this.addEventListeners();
-    }
-
-    updateProgress(loaded, queue) {
-        this.amountDone = Math.round((loaded / queue) * 100);
-    }
-
-    async playIntro() {
-        return new Promise((resolve) => {
-            this.timeline = new gsap.timeline();
-            this.timeline
-                .to(this.domElements.svgLogo, {
-                    opacity: 0,
-                    duration: 1.2,
-                    delay: 2.2,
-                    top: "-120%",
-                    ease: "power4.out",
-                })
-                .to(
-                    this.domElements.progressBarContainer,
-                    {
-                        opacity: 0,
-                        duration: 1.2,
-                        top: "30%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.progressWrapper,
-                    {
-                        opacity: 0,
-                        duration: 1.2,
-                        bottom: "21%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.description,
-                    {
-                        opacity: 0,
-                        duration: 1.2,
-                        bottom: "35%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.preloaderTitle,
-                    {
-                        opacity: 0,
-                        duration: 1.2,
-                        bottom: "18%",
-                        ease: "power4.out",
-                        onUpdate: () => {
-                            this.domElements.preloaderTitle.classList.remove(
-                                "fade-in-out"
-                            );
-                        },
-
-                        onComplete: () => {
-                            this.domElements.svgLogo.remove();
-                            this.domElements.progressBarContainer.remove();
-                            this.domElements.progressWrapper.remove();
-                            this.domElements.preloaderTitle.remove();
-                            this.domElements.preloaderWrapper.remove();
-                        },
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.welcomeTitle,
-                    {
-                        opacity: 1,
-                        duration: 1.2,
-                        top: "37%",
-                        ease: "power4.out",
-                    },
-                    "-=1"
-                )
-                .to(
-                    this.domElements.nameForm,
-                    {
-                        opacity: 1,
-                        duration: 1.2,
-                        top: "50%",
-                        ease: "power4.out",
-                    },
-                    "-=1"
-                )
-                .to(
-                    this.domElements.nameInputButton,
-                    {
-                        opacity: 1,
-                        duration: 1.2,
-                        bottom: "39%",
-                        ease: "power4.out",
-                        onComplete: () => {
-                            // this.domElements.preloader.remove();
-                            resolve;
-                        },
-                    },
-                    "-=1"
-                );
+            this.onResourcesReady();
         });
     }
 
-    onNameInput = () => {
-        if (this.domElements.nameInput.value === "") return;
-        this.nameInputOutro();
-    };
-
-    onCharacterSelect = () => {
-        this.preloaderOutro();
-    };
-
-    async nameInputOutro() {
-        return new Promise((resolve) => {
-            this.timeline2 = new gsap.timeline();
-            this.timeline2
-                .to(this.domElements.welcomeTitle, {
-                    opacity: 0,
-                    duration: 1.2,
-                    top: "34%",
-                    ease: "power4.out",
-                })
-                .to(
-                    this.domElements.nameForm,
-                    {
-                        opacity: 0,
-                        duration: 1.2,
-                        top: "44%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.nameInputButton,
-                    {
-                        opacity: 0,
-                        duration: 1.2,
-                        bottom: "47%",
-                        ease: "power4.out",
-                        onComplete: () => {
-                            this.domElements.welcomeTitle.remove();
-                            this.domElements.nameForm.remove();
-                            this.domElements.nameInputButton.remove();
-                            this.domElements.avatarLeftImg.style.pointerEvents =
-                                "auto";
-                            this.domElements.avatarRightImg.style.pointerEvents =
-                                "auto";
-                        },
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.characterSelectTitle,
-                    {
-                        opacity: 1,
-                        duration: 1.2,
-                        top: "20%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.avatarWrapper,
-                    {
-                        opacity: 1,
-                        duration: 1.2,
-                        bottom: "47%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                )
-                .to(
-                    this.domElements.customizeButton,
-                    {
-                        opacity: 1,
-                        duration: 1.2,
-                        bottom: "25%",
-                        ease: "power4.out",
-                    },
-                    "-=1.05"
-                );
+    createElement() {
+        // Loading overlay
+        this.overlay = document.createElement("div");
+        Object.assign(this.overlay.style, {
+            position: "fixed",
+            inset: "0",
+            zIndex: "200",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "black",
+            transition: "opacity 1s ease",
+            opacity: "1",
         });
-    }
 
-    async preloaderOutro() {
-        return new Promise((resolve) => {
-            this.timeline3 = new gsap.timeline();
-            this.timeline3.to(this.domElements.preloader, {
-                duration: 1.7,
-                // top: "-150%",
-                opacity: 0,
-                ease: "power3.out",
-                onComplete: () => {
-                    this.domElements.preloader.remove();
-                    resolve;
-                },
-            });
+        // Diamond loader (from player-react)
+        this.loader = document.createElement("span");
+        this.loader.className = "diamond-loader";
+        this.overlay.appendChild(this.loader);
+
+        // Name input container (hidden initially)
+        this.nameContainer = document.createElement("div");
+        Object.assign(this.nameContainer.style, {
+            display: "none",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "16px",
         });
-    }
 
-    addEventListeners() {
-        this.domElements.nameInputButton.addEventListener(
-            "click",
-            this.onNameInput
-        );
-        this.domElements.avatarLeftImg.addEventListener(
-            "click",
-            this.onCharacterSelect
-        );
-        this.domElements.avatarRightImg.addEventListener(
-            "click",
-            this.onCharacterSelect
-        );
-    }
+        this.nameInput = document.createElement("input");
+        this.nameInput.type = "text";
+        this.nameInput.placeholder = "Enter your name";
+        this.nameInput.maxLength = 25;
+        Object.assign(this.nameInput.style, {
+            width: "320px",
+            padding: "14px 20px",
+            fontSize: "18px",
+            fontFamily: "sans-serif",
+            color: "white",
+            backgroundColor: "transparent",
+            border: "2px solid #de3500",
+            borderRadius: "8px",
+            outline: "none",
+            textAlign: "center",
+        });
 
-    update() {
-        if (this.counter < this.amountDone) {
-            this.counter++;
-            this.domElements.text1.innerText = Math.round(this.counter / 10);
+        this.nameInput.addEventListener("focus", () => {
+            this.nameInput.style.borderColor = "#ff5722";
+            this.nameInput.style.boxShadow = "0 0 12px rgba(222, 53, 0, 0.4)";
+        });
+        this.nameInput.addEventListener("blur", () => {
+            this.nameInput.style.borderColor = "#de3500";
+            this.nameInput.style.boxShadow = "none";
+        });
 
-            if (Math.round(this.counter / 10) !== 10) {
-                this.domElements.text2.innerText = Math.round(
-                    this.counter % 10
-                );
-                this.flag = false;
-            } else {
-                this.domElements.text2.innerText = 0;
-                this.flag = true;
+        this.nameInput.addEventListener("keydown", (e) => {
+            if (e.code === "Enter") {
+                this.onNameSubmit();
             }
+        });
 
-            this.domElements.progressBar.style.width =
-                Math.round(this.counter) + "%";
+        this.nameContainer.appendChild(this.nameInput);
+        this.overlay.appendChild(this.nameContainer);
 
-            if (this.flag) {
-                this.domElements.progressBar.style.width = "100%";
+        // Inject diamond loader CSS
+        const style = document.createElement("style");
+        style.textContent = `
+            .diamond-loader {
+                position: relative;
+                width: 64px;
+                height: 64px;
+                background-color: rgba(0, 0, 0, 0.5);
+                transform: rotate(45deg);
+                overflow: hidden;
             }
-        }
+            .diamond-loader::after {
+                content: "";
+                position: absolute;
+                inset: 8px;
+                margin: auto;
+                background: #222b32;
+            }
+            .diamond-loader::before {
+                content: "";
+                position: absolute;
+                inset: -15px;
+                margin: auto;
+                background: #de3500;
+                animation: diamondLoader 2s linear infinite;
+            }
+            @keyframes diamondLoader {
+                0%, 10% {
+                    transform: translate(-64px, -64px) rotate(-45deg);
+                }
+                90%, 100% {
+                    transform: translate(0px, 0px) rotate(-45deg);
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        document.body.appendChild(this.overlay);
     }
+
+    onResourcesReady() {
+        this.ready = true;
+
+        // Hide loader, show name input
+        this.loader.style.display = "none";
+        this.nameContainer.style.display = "flex";
+        this.nameInput.focus();
+    }
+
+    onNameSubmit() {
+        const name = this.nameInput.value.trim();
+        if (!name) return;
+
+        this.nameEntered = true;
+
+        // Send name to server
+        this.socket.emit("setName", name);
+        this.socket.emit("setAvatar", "brute");
+
+        // Fade out overlay
+        this.overlay.style.opacity = "0";
+        this.overlay.style.pointerEvents = "none";
+
+        setTimeout(() => {
+            this.overlay.remove();
+        }, 1000);
+    }
+
+    update() {}
 }

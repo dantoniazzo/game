@@ -11,17 +11,12 @@ const domElements = elements({
     messageSubmitButton: "#chat-message-button",
     messageInput: "#chat-message-input",
     inputWrapper: ".message-input-wrapper",
-    nameInputButton: "#name-input-button",
-    nameInput: "#name-input",
-    avatarLeftImg: ".avatar-left",
-    avatarRightImg: ".avatar-right",
 });
 
 // Frontend Server ----------------------------------
 
 const socketUrl = new URL("/", window.location.href);
 
-// const socket = io(socketUrl.toString());
 const chatSocket = io(socketUrl.toString() + "chat");
 const updateSocket = io(socketUrl.toString() + "update");
 let userName = "";
@@ -32,49 +27,15 @@ const experience = new Experience(domElements.canvas, updateSocket);
 
 // Sockets ----------------------------------
 
-chatSocket.on("connect", () => {
-    // console.log("Connected to server with ID" + chatSocket.id);
-});
+chatSocket.on("connect", () => {});
 
 domElements.messageSubmitButton.addEventListener("click", handleMessageSubmit);
-domElements.nameInputButton.addEventListener("click", handleNameSubmit);
 domElements.chatContainer.addEventListener("click", handleChatClick);
-domElements.avatarLeftImg.addEventListener(
-    "click",
-    handleCharacterSelectionLeft
-);
-domElements.avatarRightImg.addEventListener(
-    "click",
-    handleCharacterSelectionRight
-);
 document.addEventListener("keydown", handleMessageSubmit);
 
 function handleChatClick() {
     if (domElements.inputWrapper.classList.contains("hidden"))
         domElements.inputWrapper.classList.remove("hidden");
-}
-
-function handleNameSubmit() {
-    userName = domElements.nameInput.value;
-    chatSocket.emit("setName", userName);
-    updateSocket.emit("setName", userName);
-}
-
-function handleCharacterSelectionLeft() {
-    updateSocket.emit("setAvatar", "male");
-
-    domElements.avatarLeftImg.removeEventListener(
-        "click",
-        handleCharacterSelectionLeft
-    );
-}
-function handleCharacterSelectionRight() {
-    updateSocket.emit("setAvatar", "female");
-
-    domElements.avatarRightImg.removeEventListener(
-        "click",
-        handleCharacterSelectionRight
-    );
 }
 
 function handleMessageSubmit(event) {
