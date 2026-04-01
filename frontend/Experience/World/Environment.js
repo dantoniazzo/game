@@ -11,7 +11,6 @@ export default class Environment {
 
     setEnvironment() {
         this.scene.background = new THREE.Color("#87ceeb");
-        this.scene.fog = new THREE.Fog("#87ceeb", 30, 60);
 
         const ambient = new THREE.AmbientLight(0xffffff, 1.5);
         this.scene.add(ambient);
