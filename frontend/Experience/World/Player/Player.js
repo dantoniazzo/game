@@ -120,7 +120,7 @@ export default class Player {
 
         this.socket.on("setAvatarSkin", (avatarSkin, id) => {
             if (!this.avatar && id === this.socket.id) {
-                const skin = this.resources.items[avatarSkin] ? avatarSkin : "brute";
+                const skin = this.resources.items[avatarSkin] ? avatarSkin : "mike";
                 this.player.avatarSkin = skin;
                 this.avatar = new Avatar(
                     this.resources.items[skin],

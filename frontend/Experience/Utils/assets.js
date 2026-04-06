@@ -3,9 +3,9 @@ export default [
         westgate: {
             assets: [
                 {
-                    name: "brute",
+                    name: "mike",
                     type: "glbModel",
-                    path: "/models/brute.glb",
+                    path: "/models/mike.glb",
                 },
                 {
                     name: "monster",

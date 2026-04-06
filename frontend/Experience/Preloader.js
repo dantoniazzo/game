@@ -121,7 +121,7 @@ export default class Preloader {
         if (!name) return;
 
         this.socket.emit("setName", name);
-        this.socket.emit("setAvatar", "brute");
+        this.socket.emit("setAvatar", "mike");
 
         // Fade out and remove
         this.overlay.style.opacity = "0";
