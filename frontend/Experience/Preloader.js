@@ -1,11 +1,11 @@
 import Experience from "./Experience.js";
-import CharacterSelect from "./CharacterSelect.js";
 
 export default class Preloader {
     constructor() {
         this.experience = new Experience();
         this.resources = this.experience.resources;
         this.socket = this.experience.socket;
+        this.camera = this.experience.camera;
 
         this.createOverlay();
 
@@ -121,15 +121,16 @@ export default class Preloader {
         if (!name) return;
 
         this.socket.emit("setName", name);
+        this.socket.emit("setAvatar", "brute");
 
-        // Remove HTML overlay
-        this.overlay.remove();
+        // Fade out and remove
+        this.overlay.style.opacity = "0";
+        this.overlay.style.pointerEvents = "none";
 
-        // Hand off to character select
-        this.characterSelect = new CharacterSelect();
+        this.camera.pointerLockEnabled = true;
+
+        setTimeout(() => this.overlay.remove(), 1000);
     }
 
-    update() {
-        if (this.characterSelect) this.characterSelect.update();
-    }
+    update() {}
 }
