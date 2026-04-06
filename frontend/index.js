@@ -15,7 +15,8 @@ const domElements = elements({
 
 // Frontend Server ----------------------------------
 
-const socketUrl = new URL("/", window.location.href);
+const serverUrl = import.meta.env.VITE_SERVER_URL || window.location.href;
+const socketUrl = new URL("/", serverUrl);
 
 const chatSocket = io(socketUrl.toString() + "chat");
 const updateSocket = io(socketUrl.toString() + "update");

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import Experience from "../Experience.js";
+import { ACCENT } from "../Utils/constants.js";
 
 const _dir = new THREE.Vector3();
 
@@ -33,7 +34,7 @@ export default class Compass {
         });
 
         const directions = [
-            { label: "N", deg: 0, color: "#e74c3c" },
+            { label: "N", deg: 0, color: ACCENT },
             { label: "E", deg: 90, color: "rgba(255,255,255,0.6)" },
             { label: "S", deg: 180, color: "rgba(255,255,255,0.6)" },
             { label: "W", deg: 270, color: "rgba(255,255,255,0.6)" },

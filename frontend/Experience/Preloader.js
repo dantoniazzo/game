@@ -1,4 +1,5 @@
 import Experience from "./Experience.js";
+import { ACCENT, ACCENT_LIGHT, ACCENT_GLOW } from "./Utils/constants.js";
 
 export default class Preloader {
     constructor() {
@@ -54,18 +55,18 @@ export default class Preloader {
             fontFamily: "sans-serif",
             color: "white",
             backgroundColor: "transparent",
-            border: "2px solid #de3500",
+            border: `2px solid ${ACCENT}`,
             borderRadius: "8px",
             outline: "none",
             textAlign: "center",
         });
 
         this.nameInput.addEventListener("focus", () => {
-            this.nameInput.style.borderColor = "#ff5722";
-            this.nameInput.style.boxShadow = "0 0 12px rgba(222, 53, 0, 0.4)";
+            this.nameInput.style.borderColor = ACCENT_LIGHT;
+            this.nameInput.style.boxShadow = `0 0 12px ${ACCENT_GLOW}`;
         });
         this.nameInput.addEventListener("blur", () => {
-            this.nameInput.style.borderColor = "#de3500";
+            this.nameInput.style.borderColor = ACCENT;
             this.nameInput.style.boxShadow = "none";
         });
         this.nameInput.addEventListener("keydown", (e) => {
@@ -98,7 +99,7 @@ export default class Preloader {
                 position: absolute;
                 inset: -15px;
                 margin: auto;
-                background: #de3500;
+                background: ${ACCENT};
                 animation: diamondLoader 2s linear infinite;
             }
             @keyframes diamondLoader {
