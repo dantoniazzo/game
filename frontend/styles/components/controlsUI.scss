@@ -12,6 +12,35 @@
     }
 }
 
+.jump-button {
+    width: 70px;
+    height: 70px;
+    position: absolute;
+    right: 5%;
+    bottom: 5%;
+    background: $color-base-white-transparent;
+    z-index: 40;
+    border-radius: 50%;
+    border: none;
+    outline: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    color: rgba(0, 0, 0, 0.4);
+    font-family: sans-serif;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    @include media(">=tablet") {
+        display: none;
+    }
+    &:active {
+        background: rgba(252, 252, 252, 0.9);
+    }
+}
+
 .control-overlay {
     position: fixed;
     width: 100vw;

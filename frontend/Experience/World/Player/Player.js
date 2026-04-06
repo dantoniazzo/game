@@ -28,6 +28,7 @@ export default class Player {
       controlOverlay: ".control-overlay",
       messageInput: "#chat-message-input",
       switchViewButton: ".switch-camera-view",
+      jumpButton: ".jump-button",
     });
 
     this.initPlayer();
@@ -315,6 +316,31 @@ export default class Player {
   addEventListeners() {
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keyup", this.onKeyUp);
+
+    if (this.domElements.jumpButton) {
+      this.domElements.jumpButton.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        if (
+          !this.actions.jump &&
+          this.player.onFloor &&
+          this.crouchTimer < 0 &&
+          this.liftoffFrames === 0
+        ) {
+          this.actions.jump = true;
+          if (this.isMoving()) {
+            this.jumpAnim = "running-jump";
+            this.jumpReady = true;
+          } else {
+            this.jumpAnim = "jump";
+            this.crouchTimer = 0;
+          }
+        }
+      });
+      this.domElements.jumpButton.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        this.actions.jump = false;
+      });
+    }
   }
 
   resize() {}
@@ -473,6 +499,15 @@ export default class Player {
   }
 
   updateAvatarRotation() {
+    if (this.actions.movingJoyStick) {
+      // Joystick: compute direction from joystick vector angle
+      this.player.directionOffset = Math.atan2(
+        this.joystickVector.x,
+        this.joystickVector.z,
+      );
+      return;
+    }
+
     if (this.actions.forward) {
       this.player.directionOffset = Math.PI;
     }
