@@ -8,7 +8,6 @@ import elements from "../../Utils/functions/elements.js";
 import Avatar from "./Avatar.js";
 
 const JUMP_ANIMS = ["jump", "running-jump"];
-const JUMP_DELAY = 0.7;
 const CROSSFADE_DURATION = 0.2;
 const JUMP_IN_CROSSFADE = 0.1;
 const JUMP_OUT_CROSSFADE = 0.5;
@@ -93,7 +92,7 @@ export default class Player {
     this.joystickDistance = 0;
 
     // Jump state
-    this.crouchTimer = -1;
+    this.standingJump = -1;
     this.liftoffFrames = 0;
     this.jumpAnim = "jump";
     this.jumpReady = false;
@@ -249,7 +248,7 @@ export default class Player {
       e.code === "Space" &&
       !this.actions.jump &&
       this.player.onFloor &&
-      this.crouchTimer < 0 &&
+      this.standingJump < 0 &&
       this.liftoffFrames === 0
     ) {
       this.actions.jump = true;
@@ -259,9 +258,9 @@ export default class Player {
         this.jumpAnim = "running-jump";
         this.jumpReady = true;
       } else {
-        // Standing jump — crouch wind-up before impulse
+        // Standing jump — animation only, no impulse
         this.jumpAnim = "jump";
-        this.crouchTimer = 0;
+        this.standingJump = 0;
       }
     }
   };
@@ -332,7 +331,7 @@ export default class Player {
         if (
           !this.actions.jump &&
           this.player.onFloor &&
-          this.crouchTimer < 0 &&
+          this.standingJump < 0 &&
           this.liftoffFrames === 0
         ) {
           this.actions.jump = true;
@@ -341,7 +340,7 @@ export default class Player {
             this.jumpReady = true;
           } else {
             this.jumpAnim = "jump";
-            this.crouchTimer = 0;
+            this.standingJump = 0;
           }
         }
       });
@@ -403,24 +402,15 @@ export default class Player {
     if (this.player.onFloor) {
       // Running/walking jump: immediate impulse
       if (this.jumpReady) {
-        this.player.velocity.y = 12;
+        this.player.velocity.y = 6;
         this.jumpReady = false;
         this.liftoffFrames = 10;
       }
 
-      // Standing jump: crouch delay then impulse
-      if (this.crouchTimer >= 0) {
-        this.crouchTimer += this.time.delta;
-        if (this.crouchTimer >= JUMP_DELAY) {
-          this.player.velocity.y = 12;
-          this.crouchTimer = -1;
-          this.liftoffFrames = 10;
-        }
-      }
     } else {
-      // Fell off ledge during crouch — cancel
-      if (this.crouchTimer >= 0) {
-        this.crouchTimer = -1;
+      // Fell off ledge during standing jump — cancel
+      if (this.standingJump >= 0) {
+        this.standingJump = -1;
       }
       this.jumpReady = false;
     }
@@ -570,14 +560,19 @@ export default class Player {
       jumpAnimDone = this.avatar.animation.isCurrentDone();
     }
 
-    const isCrouching = this.crouchTimer >= 0;
+    const isStandingJump = this.standingJump >= 0;
     const isLiftingOff = this.liftoffFrames > 0;
 
     // Stay in jump until animation finishes AND character has landed.
-    // Only enter jump from an actual jump initiation (crouch/liftoff), not from onFloor flicker.
+    // Only enter jump from an actual jump initiation (standing jump/liftoff), not from onFloor flicker.
     const inJump = playingJump
       ? !jumpAnimDone || !this.player.onFloor
-      : isCrouching || isLiftingOff;
+      : isStandingJump || isLiftingOff;
+
+    // Reset standing jump flag when leaving jump state
+    if (!inJump && isStandingJump) {
+      this.standingJump = -1;
+    }
 
     let desired;
     if (inJump) {
