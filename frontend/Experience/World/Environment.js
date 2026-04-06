@@ -10,17 +10,14 @@ export default class Environment {
     }
 
     setEnvironment() {
-        this.scene.background = new THREE.Color("#87ceeb");
+        this.scene.background = new THREE.Color("#0a0a12");
 
-        const ambient = new THREE.AmbientLight(0xffffff, 1.5);
+        const ambient = new THREE.AmbientLight(0xffffff, 0.4);
         this.scene.add(ambient);
 
-        this.sunLight = new THREE.DirectionalLight("#ffffff", 2);
+        this.sunLight = new THREE.DirectionalLight("#4466aa", 0.8);
         this.sunLight.position.set(10, 15, 10);
         this.scene.add(this.sunLight);
-
-        const hemiLight = new THREE.HemisphereLight("#87ceeb", "#228b22", 0.8);
-        this.scene.add(hemiLight);
     }
 
     update() {}

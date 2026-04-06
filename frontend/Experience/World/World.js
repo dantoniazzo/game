@@ -34,7 +34,7 @@ export default class World extends EventEmitter {
         geometry.rotateX(-Math.PI / 2);
 
         const material = new THREE.MeshBasicMaterial({
-            color: 0x00ff00,
+            color: 0x2244aa,
             wireframe: true,
         });
 
