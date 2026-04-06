@@ -90,6 +90,7 @@ export default class Player {
     };
 
     this.joystickVector = new THREE.Vector3();
+    this.joystickDistance = 0;
 
     // Jump state
     this.crouchTimer = -1;
@@ -109,10 +110,14 @@ export default class Player {
       this.actions.movingJoyStick = true;
       this.joystickVector.z = -data.vector.y;
       this.joystickVector.x = data.vector.x;
+      this.joystickDistance = data.distance;
+      this.actions.run = data.distance > 35;
     });
 
     this.joystick.on("end", () => {
       this.actions.movingJoyStick = false;
+      this.joystickDistance = 0;
+      this.actions.run = false;
     });
   }
 
@@ -308,7 +313,11 @@ export default class Player {
 
     returnVector.applyQuaternion(this.camera.perspectiveCamera.quaternion);
     returnVector.y = 0;
-    returnVector.multiplyScalar(1.5);
+
+    // Scale speed progressively with joystick distance (0-50 range)
+    const t = Math.min(this.joystickDistance / 50, 1);
+    const speed = 0.5 + t * 2.5;
+    returnVector.multiplyScalar(speed);
 
     return returnVector;
   }
