@@ -73,7 +73,30 @@ export default class Preloader {
             if (e.code === "Enter") this.onNameSubmit();
         });
 
+        this.submitButton = document.createElement("button");
+        this.submitButton.textContent = "Enter";
+        Object.assign(this.submitButton.style, {
+            padding: "10px 40px",
+            fontSize: "16px",
+            fontFamily: "sans-serif",
+            fontWeight: "bold",
+            color: "white",
+            backgroundColor: ACCENT,
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            outline: "none",
+        });
+        this.submitButton.addEventListener("mouseenter", () => {
+            this.submitButton.style.backgroundColor = ACCENT_LIGHT;
+        });
+        this.submitButton.addEventListener("mouseleave", () => {
+            this.submitButton.style.backgroundColor = ACCENT;
+        });
+        this.submitButton.addEventListener("click", () => this.onNameSubmit());
+
         this.nameContainer.appendChild(this.nameInput);
+        this.nameContainer.appendChild(this.submitButton);
         this.overlay.appendChild(this.nameContainer);
 
         // CSS
