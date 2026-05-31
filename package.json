@@ -20,6 +20,7 @@
     "vite": "^4.3.9"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "events": "^3.3.0",

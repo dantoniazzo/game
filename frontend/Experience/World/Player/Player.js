@@ -37,8 +37,69 @@ export default class Player {
     this.addEventListeners();
   }
 
+  // ─── vehicle interface ──────────────────────────────────────────────────
+
+  setVehicle(vehicle) {
+    this.vehicle = vehicle;
+  }
+
+  enterVehicle() {
+    if (!this.vehicle || this.inVehicle) return;
+    this.inVehicle = true;
+
+    // Hide the player avatar
+    if (this.avatar) this.avatar.avatar.visible = false;
+
+    // Stop socket broadcast while driving
+    this._inVehicleFlag = true;
+
+    // Disable player controls
+    this.actions.forward = false;
+    this.actions.backward = false;
+    this.actions.left = false;
+    this.actions.right = false;
+    this.actions.jump = false;
+
+    // Switch camera to vehicle mode
+    this.camera.enterVehicleMode(this.vehicle);
+
+    // Seed the vehicle camera at the current camera position so there's no jump
+    this.vehicle.cameraPosition.copy(this.camera.perspectiveCamera.position);
+
+    // Enable vehicle keyboard controls
+    this.vehicle.enableControls();
+    this.vehicle.showEnterPrompt(false);
+  }
+
+  exitVehicle() {
+    if (!this.vehicle || !this.inVehicle) return;
+    this.inVehicle = false;
+    this._inVehicleFlag = false;
+
+    // Restore avatar
+    if (this.avatar) this.avatar.avatar.visible = true;
+
+    // Teleport player collider next to the car (offset sideways so they don't spawn inside)
+    const carPos = this.vehicle.getPosition();
+    const exitOffset = new THREE.Vector3(3, 1, 0);
+    const spawnPos = carPos.clone().add(exitOffset);
+
+    this.player.collider.start.copy(spawnPos);
+    this.player.collider.end.copy(spawnPos);
+    this.player.collider.end.y += this.player.height;
+    this.player.velocity.set(0, 0, 0);
+
+    // Disable vehicle controls
+    this.vehicle.disableControls();
+
+    // Switch camera back to player mode
+    this.camera.exitVehicleMode();
+  }
+
   initPlayer() {
     this.player = {};
+    this.inVehicle = false;
+    this.vehicle = null;
 
     this.player.body = this.camera.perspectiveCamera;
     this.player.animation = "idle";
@@ -213,7 +274,8 @@ export default class Player {
 
   updatePlayerSocket() {
     setInterval(() => {
-      if (this.avatar) {
+      // Don't broadcast position while the player is inside the vehicle
+      if (this.avatar && !this._inVehicleFlag) {
         this.socket.emit("updatePlayer", {
           position: this.avatar.avatar.position,
           quaternion: this.avatar.avatar.quaternion,
@@ -236,6 +298,19 @@ export default class Player {
 
   onKeyDown = (e) => {
     if (document.activeElement === this.domElements.messageInput) return;
+
+    // F key — enter / exit vehicle
+    if (e.code === "KeyF") {
+      if (this.inVehicle) {
+        this.exitVehicle();
+      } else if (this.vehicle && this._isNearVehicle()) {
+        this.enterVehicle();
+      }
+      return;
+    }
+
+    // Block all other player controls while driving
+    if (this.inVehicle) return;
 
     if (e.code === "KeyW" || e.code === "ArrowUp") this.actions.forward = true;
     if (e.code === "KeyS" || e.code === "ArrowDown")
@@ -613,7 +688,23 @@ export default class Player {
     }
   }
 
+  // ─── vehicle proximity helper ────────────────────────────────────────────
+
+  _isNearVehicle() {
+    if (!this.vehicle) return false;
+    const carPos = this.vehicle.getPosition();
+    const playerPos = this.player.collider.end;
+    return playerPos.distanceTo(carPos) < 6;
+  }
+
   update() {
+    // While in the vehicle, still update other players' avatars but skip
+    // all player movement / animation
+    if (this.inVehicle) {
+      this.updateOtherPlayers();
+      return;
+    }
+
     if (this.avatar) {
       this.updateColliderMovement();
       this.updateAvatarPosition();
@@ -621,6 +712,11 @@ export default class Player {
       this.updateDesiredAnimation();
       this.updateCameraPosition();
       this.updateOtherPlayers();
+
+      // Show/hide "Press F to enter" prompt based on proximity
+      if (this.vehicle) {
+        this.vehicle.showEnterPrompt(this._isNearVehicle());
+      }
     }
   }
 }

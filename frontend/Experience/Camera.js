@@ -106,8 +106,40 @@ export default class Camera {
         this.perspectiveCamera.updateProjectionMatrix();
     }
 
+    // ─── vehicle camera ──────────────────────────────────────────────────────
+
+    enterVehicleMode(vehicle) {
+        this.vehicleMode = true;
+        this.vehicle = vehicle;
+
+        // Release pointer lock so the mouse is free while driving
+        if (document.pointerLockElement) document.exitPointerLock();
+        // Disable OrbitControls on mobile while driving
+        if (this.controls) this.controls.enabled = false;
+    }
+
+    exitVehicleMode() {
+        this.vehicleMode = false;
+        this.vehicle = null;
+
+        // Re-enable pointer lock for desktop player camera
+        if (!this.isMobile) this.pointerLockEnabled = true;
+        // Re-enable OrbitControls on mobile
+        if (this.controls) this.controls.enabled = true;
+    }
+
+    // ─── main update ─────────────────────────────────────────────────────────
+
     update() {
         if (this.frozen) return;
+
+        if (this.vehicleMode && this.vehicle) {
+            // Vehicle.js updates cameraPosition / cameraLookAt each frame;
+            // we just copy them to the Three.js camera here.
+            this.perspectiveCamera.position.copy(this.vehicle.cameraPosition);
+            this.perspectiveCamera.lookAt(this.vehicle.cameraLookAt);
+            return;
+        }
 
         if (this.isMobile) {
             if (this.controls && this.controls.enabled) {
