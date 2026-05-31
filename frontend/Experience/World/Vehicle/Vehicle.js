@@ -5,10 +5,17 @@ import GUI from 'lil-gui';
 import { RapierRaycastVehicle } from './RapierRaycastVehicle.js';
 
 // Camera smoothing scratch objects
-const _idealOffset = new THREE.Vector3();
-const _idealLookAt = new THREE.Vector3();
-const _chassisPos = new THREE.Vector3();
-const _chassisRot = new THREE.Quaternion();
+const _idealOffset   = new THREE.Vector3();
+const _idealLookAt   = new THREE.Vector3();
+const _chassisPos    = new THREE.Vector3();
+const _chassisRot    = new THREE.Quaternion();
+
+// Player collision scratch objects
+const _carCollPos    = new THREE.Vector3();
+const _carCollQuat   = new THREE.Quaternion();
+const _carCollQuatInv = new THREE.Quaternion();
+const _carLocal      = new THREE.Vector3();
+const _carPush       = new THREE.Vector3();
 
 // ─── Vehicle ──────────────────────────────────────────────────────────────────
 
@@ -40,9 +47,13 @@ export default class Vehicle {
         // effect immediately without recreating anything.
         this.params = {
             // Controls
-            maxForce: 200,
+            maxForce: 500,
             maxSteer: 0.5,
             maxBrake: 10,
+
+            // Damping — how quickly the car bleeds off speed when coasting
+            linearDamping: 0.2,
+            angularDamping: 2,
 
             // Wheel geometry
             radius: 0.38,
@@ -59,8 +70,8 @@ export default class Vehicle {
             sideFrictionStiffness: 1,
             frictionSlip: 1.4,
             rollInfluence: 0.01,
-            forwardAcceleration: 1,
-            sideAcceleration: 1,
+            forwardAcceleration: 2.5,
+            sideAcceleration: 3.5,
 
             // Sliding spin
             customSlidingRotationalSpeed: -30,
@@ -83,7 +94,9 @@ export default class Vehicle {
 
         const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
             .setTranslation(spawnPosition.x, spawnPosition.y, spawnPosition.z)
-            .setRotation({ x: spawnQuat.x, y: spawnQuat.y, z: spawnQuat.z, w: spawnQuat.w });
+            .setRotation({ x: spawnQuat.x, y: spawnQuat.y, z: spawnQuat.z, w: spawnQuat.w })
+            .setLinearDamping(this.params.linearDamping)
+            .setAngularDamping(this.params.angularDamping);
 
         this.chassisBody = this.rapierWorld.createRigidBody(bodyDesc);
 
@@ -185,6 +198,10 @@ export default class Vehicle {
         controlsFolder.add(p, 'maxForce', 0, 1000, 1).name('Max Force');
         controlsFolder.add(p, 'maxSteer', 0.1, 1.5, 0.01).name('Max Steer (rad)');
         controlsFolder.add(p, 'maxBrake', 0, 50, 0.5).name('Max Brake');
+        controlsFolder.add(p, 'linearDamping', 0, 10, 0.1).name('Linear Damping')
+            .onChange(() => this.chassisBody.setLinearDamping(p.linearDamping));
+        controlsFolder.add(p, 'angularDamping', 0, 10, 0.1).name('Angular Damping')
+            .onChange(() => this.chassisBody.setAngularDamping(p.angularDamping));
 
         // ── Suspension ──────────────────────────────────────────────────────
         const suspFolder = this.gui.addFolder('Suspension');
@@ -378,6 +395,56 @@ export default class Vehicle {
 
             this.cameraPosition.lerp(_idealOffset, smoothing);
             this.cameraLookAt.lerp(_idealLookAt, smoothing);
+        }
+    }
+
+    // ─── player collision ────────────────────────────────────────────────────
+    // The Rapier collider is invisible to the player's Three.js Octree, so we
+    // do an OBB check manually each frame and push the player's capsule out.
+
+    resolvePlayerCollision(capsule) {
+        if (!this.chassisBody) return;
+
+        const t = this.chassisBody.translation();
+        const r = this.chassisBody.rotation();
+
+        const carPos    = _carCollPos.set(t.x, t.y, t.z);
+        const carQuat   = _carCollQuat.set(r.x, r.y, r.z, r.w);
+        const carQuatInv = _carCollQuatInv.copy(carQuat).conjugate();
+
+        // Half-extents matching the Rapier cuboid(2.35, 0.55, 1),
+        // padded by the capsule radius (0.35) so we push out before overlap.
+        const RADIUS = capsule.radius;
+        const hx = 2.35 + RADIUS;
+        const hy = 0.55 + RADIUS;
+        const hz = 1.0  + RADIUS;
+
+        // Check both sphere centres of the capsule
+        for (const pt of [capsule.start, capsule.end]) {
+            // Into car-local space
+            _carLocal.copy(pt).sub(carPos).applyQuaternion(carQuatInv);
+
+            const px = hx - Math.abs(_carLocal.x);
+            const py = hy - Math.abs(_carLocal.y);
+            const pz = hz - Math.abs(_carLocal.z);
+
+            if (px > 0 && py > 0 && pz > 0) {
+                // Overlapping — resolve along the axis of smallest penetration
+                _carPush.set(0, 0, 0);
+                if (px <= py && px <= pz) {
+                    _carPush.x = px * Math.sign(_carLocal.x);
+                } else if (pz <= px && pz <= py) {
+                    _carPush.z = pz * Math.sign(_carLocal.z);
+                } else {
+                    _carPush.y = py * Math.sign(_carLocal.y);
+                }
+
+                // Back to world space
+                _carPush.applyQuaternion(carQuat);
+                capsule.start.add(_carPush);
+                capsule.end.add(_carPush);
+                break;
+            }
         }
     }
 

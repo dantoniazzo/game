@@ -521,6 +521,9 @@ export default class Player {
     this.player.collider.translate(deltaPosition);
     this.playerCollisions();
 
+    // Push player out of the car's oriented bounding box
+    if (this.vehicle) this.vehicle.resolvePlayerCollision(this.player.collider);
+
     if (this.camera.isMobile) {
       this.player.body.position.sub(this.camera.controls.target);
       this.camera.controls.target.copy(this.player.collider.end);
