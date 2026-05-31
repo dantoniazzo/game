@@ -25,6 +25,7 @@
     "dotenv": "^16.3.1",
     "events": "^3.3.0",
     "express": "^4.18.2",
+    "lil-gui": "^0.21.0",
     "nipplejs": "^0.10.1",
     "simplex-noise": "^4.0.3",
     "socket.io": "^4.7.1",
