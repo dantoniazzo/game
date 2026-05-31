@@ -89,7 +89,7 @@ export default class Vehicle {
     _createPhysics(spawnPosition) {
         const spawnQuat = new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(0, 1, 0),
-            -Math.PI / 2,
+            0, // rotated 90° from original -PI/2, now faces along the E-W road
         );
 
         const bodyDesc = RAPIER.RigidBodyDesc.dynamic()

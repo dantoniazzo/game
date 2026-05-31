@@ -9,6 +9,7 @@ import Player from "./Player/Player.js";
 import Environment from "./Environment.js";
 import Compass from "./Compass.js";
 import Vehicle from "./Vehicle/Vehicle.js";
+import CityBlock from "./CityBlock.js";
 
 export default class World extends EventEmitter {
     constructor() {
@@ -76,7 +77,7 @@ export default class World extends EventEmitter {
             scene: this.experience.scene,
             chassisGLTF,
             wheelGLTF,
-            spawnPosition: new THREE.Vector3(8, 2, 0),
+            spawnPosition: new THREE.Vector3(25, 2, 0),
         });
 
         // Give Player a reference so it can handle enter/exit
@@ -90,10 +91,8 @@ export default class World extends EventEmitter {
         const geometry = new THREE.PlaneGeometry(size, size, 20, 20);
         geometry.rotateX(-Math.PI / 2);
 
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x2244aa,
-            wireframe: true,
-        });
+        // Invisible — CityBlock renders the visual ground on top
+        const material = new THREE.MeshBasicMaterial({ visible: false });
 
         this.ground = new THREE.Mesh(geometry, material);
         this.experience.scene.add(this.ground);
