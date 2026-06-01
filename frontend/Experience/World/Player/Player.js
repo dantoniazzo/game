@@ -223,20 +223,43 @@ export default class Player {
             }
           });
           if (this.otherPlayers[player.id]) {
-            this.otherPlayers[player.id].position = {
+            const rp = this.otherPlayers[player.id];
+
+            // ── vehicle state transitions ─────────────────────────────────
+            const wasInVehicle = rp.inVehicle || false;
+            const nowInVehicle = !!player.inVehicle;
+
+            if (nowInVehicle && !wasInVehicle) {
+              // Remote player just entered the shared vehicle — hide their avatar
+              rp.model.avatar.visible  = false;
+              rp.model.nametag.visible = false;
+              // If I'm currently driving, I've been taken over — eject myself
+              if (this.inVehicle) this.exitVehicle();
+              // Mark the vehicle as being driven remotely
+              if (this.vehicle) this.vehicle.remoteDriverId = player.id;
+            } else if (!nowInVehicle && wasInVehicle) {
+              // Remote player exited — restore their avatar, free the vehicle
+              rp.model.avatar.visible  = true;
+              rp.model.nametag.visible = true;
+              if (this.vehicle && this.vehicle.remoteDriverId === player.id) {
+                this.vehicle.remoteDriverId = null;
+              }
+            }
+            rp.inVehicle = nowInVehicle;
+
+            // ── position / rotation / animation ──────────────────────────
+            rp.position = {
               position_x: player.position_x,
               position_y: player.position_y,
               position_z: player.position_z,
             };
-            this.otherPlayers[player.id].quaternion = {
+            rp.quaternion = {
               quaternion_x: player.quaternion_x,
               quaternion_y: player.quaternion_y,
               quaternion_z: player.quaternion_z,
               quaternion_w: player.quaternion_w,
             };
-            this.otherPlayers[player.id].animation = {
-              animation: player.animation,
-            };
+            rp.animation = { animation: player.animation };
           }
         }
       }
@@ -244,6 +267,12 @@ export default class Player {
 
     this.socket.on("removePlayer", (id) => {
       this.disconnectedPlayerId = id;
+
+      // If this player was driving, free the shared vehicle
+      if (this.otherPlayers[id].inVehicle && this.vehicle &&
+          this.vehicle.remoteDriverId === id) {
+        this.vehicle.remoteDriverId = null;
+      }
 
       this.otherPlayers[id].model.nametag.material.dispose();
       this.otherPlayers[id].model.nametag.geometry.dispose();
@@ -274,13 +303,26 @@ export default class Player {
 
   updatePlayerSocket() {
     setInterval(() => {
-      // Don't broadcast position while the player is inside the vehicle
-      if (this.avatar && !this._inVehicleFlag) {
+      if (!this.avatar) return;
+
+      if (this._inVehicleFlag && this.vehicle) {
+        // Broadcast car position so other players see the car moving
+        const t = this.vehicle.chassisBody.translation();
+        const r = this.vehicle.chassisBody.rotation();
+        this.socket.emit("updatePlayer", {
+          position: { x: t.x, y: t.y, z: t.z },
+          quaternion: [r.x, r.y, r.z, r.w],
+          animation: this.player.animation,
+          avatarSkin: this.player.avatarSkin,
+          inVehicle: true,
+        });
+      } else {
         this.socket.emit("updatePlayer", {
           position: this.avatar.avatar.position,
           quaternion: this.avatar.avatar.quaternion,
           animation: this.player.animation,
           avatarSkin: this.player.avatarSkin,
+          inVehicle: false,
         });
       }
     }, 20);
@@ -548,30 +590,36 @@ export default class Player {
 
   updateOtherPlayers() {
     for (let player in this.otherPlayers) {
-      this.otherPlayers[player].model.avatar.position.set(
-        this.otherPlayers[player].position.position_x,
-        this.otherPlayers[player].position.position_y,
-        this.otherPlayers[player].position.position_z,
-      );
+      const rp = this.otherPlayers[player];
 
-      this.otherPlayers[player].model.animation.play(
-        this.otherPlayers[player].animation.animation,
-      );
+      if (rp.inVehicle) {
+        // This player is driving the shared vehicle — sync the vehicle visuals
+        if (this.vehicle) this.vehicle.syncFromNetwork(rp.position, rp.quaternion);
+        // Avatar is already hidden; nothing else to update
+      } else {
+        // Normal avatar update
+        rp.model.avatar.position.set(
+          rp.position.position_x,
+          rp.position.position_y,
+          rp.position.position_z,
+        );
 
-      this.otherPlayers[player].model.animation.update(this.time.delta);
+        rp.model.animation.play(rp.animation.animation);
+        rp.model.animation.update(this.time.delta);
 
-      this.otherPlayers[player].model.avatar.quaternion.set(
-        this.otherPlayers[player].quaternion.quaternion_x,
-        this.otherPlayers[player].quaternion.quaternion_y,
-        this.otherPlayers[player].quaternion.quaternion_z,
-        this.otherPlayers[player].quaternion.quaternion_w,
-      );
+        rp.model.avatar.quaternion.set(
+          rp.quaternion.quaternion_x,
+          rp.quaternion.quaternion_y,
+          rp.quaternion.quaternion_z,
+          rp.quaternion.quaternion_w,
+        );
 
-      this.otherPlayers[player].model.nametag.position.set(
-        this.otherPlayers[player].position.position_x,
-        this.otherPlayers[player].position.position_y + 2.1,
-        this.otherPlayers[player].position.position_z,
-      );
+        rp.model.nametag.position.set(
+          rp.position.position_x,
+          rp.position.position_y + 2.1,
+          rp.position.position_z,
+        );
+      }
     }
   }
 

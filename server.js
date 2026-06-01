@@ -62,6 +62,7 @@ updateNameSpace.on("connection", (socket) => {
         animation: "idle",
         name: "",
         avatarSkin: "",
+        inVehicle: false,
     };
     connectedSockets.set(socket.id, socket);
 
@@ -100,6 +101,7 @@ updateNameSpace.on("connection", (socket) => {
         socket.userData.quaternion.w = player.quaternion[3];
         socket.userData.animation = player.animation;
         socket.userData.avatarSkin = player.avatarSkin;
+        socket.userData.inVehicle = player.inVehicle || false;
     });
 
     setInterval(() => {
@@ -121,6 +123,7 @@ updateNameSpace.on("connection", (socket) => {
                     quaternion_w: socket.userData.quaternion.w,
                     animation: socket.userData.animation,
                     avatarSkin: socket.userData.avatarSkin,
+                    inVehicle: socket.userData.inVehicle,
                 });
             }
         }

@@ -5,17 +5,30 @@ import GUI from 'lil-gui';
 import { RapierRaycastVehicle } from './RapierRaycastVehicle.js';
 
 // Camera smoothing scratch objects
-const _idealOffset   = new THREE.Vector3();
-const _idealLookAt   = new THREE.Vector3();
-const _chassisPos    = new THREE.Vector3();
-const _chassisRot    = new THREE.Quaternion();
+const _idealOffset    = new THREE.Vector3();
+const _idealLookAt    = new THREE.Vector3();
+const _chassisPos     = new THREE.Vector3();
+const _chassisRot     = new THREE.Quaternion();
 
 // Player collision scratch objects
-const _carCollPos    = new THREE.Vector3();
-const _carCollQuat   = new THREE.Quaternion();
+const _carCollPos     = new THREE.Vector3();
+const _carCollQuat    = new THREE.Quaternion();
 const _carCollQuatInv = new THREE.Quaternion();
-const _carLocal      = new THREE.Vector3();
-const _carPush       = new THREE.Vector3();
+const _carLocal       = new THREE.Vector3();
+const _carPush        = new THREE.Vector3();
+
+// Network sync scratch objects
+const _syncPos        = new THREE.Vector3();
+const _syncQuat       = new THREE.Quaternion();
+const _syncWheelOff   = new THREE.Vector3();
+
+// Wheel local-space offsets (must match _createPhysics wheel configs)
+const WHEEL_LOCAL_OFFSETS = [
+    new THREE.Vector3( 1.3,  -0.3,  0.85),  // rear  left
+    new THREE.Vector3( 1.3,  -0.3, -0.85),  // rear  right
+    new THREE.Vector3(-1.35, -0.3,  0.85),  // front left
+    new THREE.Vector3(-1.35, -0.3, -0.85),  // front right
+];
 
 // ─── Vehicle ──────────────────────────────────────────────────────────────────
 
@@ -32,7 +45,8 @@ export default class Vehicle {
             brake: false,
         };
 
-        this.active = false;
+        this.active = false;          // true while the LOCAL player is driving
+        this.remoteDriverId = null;   // socket ID of whoever else is currently driving
 
         // Camera state read by Camera.js each frame
         this.cameraPosition = new THREE.Vector3(5, 5, -15);
@@ -336,9 +350,45 @@ export default class Vehicle {
 
     // ─── per-frame update ────────────────────────────────────────────────────
 
+    // ─── network sync (called by Player when a remote player is driving) ─────
+
+    syncFromNetwork(posObj, quatObj) {
+        _syncPos.set(posObj.position_x, posObj.position_y, posObj.position_z);
+        _syncQuat.set(quatObj.quaternion_x, quatObj.quaternion_y,
+                      quatObj.quaternion_z, quatObj.quaternion_w);
+
+        // Move the visual chassis to the broadcast position
+        this.chassisGroup.position.copy(_syncPos);
+        this.chassisGroup.quaternion.copy(_syncQuat);
+
+        // Approximate wheel world positions from chassis transform
+        for (let i = 0; i < this.wheelMeshes.length; i++) {
+            _syncWheelOff.copy(WHEEL_LOCAL_OFFSETS[i])
+                .applyQuaternion(_syncQuat)
+                .add(_syncPos);
+            this.wheelMeshes[i].position.copy(_syncWheelOff);
+            this.wheelMeshes[i].quaternion.copy(_syncQuat);
+        }
+
+        // Keep the Rapier body in sync so physics starts from the right place
+        // when the local player takes over
+        this.chassisBody.setTranslation({ x: _syncPos.x,  y: _syncPos.y,  z: _syncPos.z  }, true);
+        this.chassisBody.setRotation   ({ x: _syncQuat.x, y: _syncQuat.y, z: _syncQuat.z, w: _syncQuat.w }, true);
+        this.chassisBody.setLinvel     ({ x: 0, y: 0, z: 0 }, true);
+        this.chassisBody.setAngvel     ({ x: 0, y: 0, z: 0 }, true);
+    }
+
     update(delta) {
         const dt = Math.min(delta, 0.05);
         const p = this.params;
+
+        // When a remote player is driving, visuals are updated via syncFromNetwork().
+        // Still step Rapier (for ground/building colliders) but apply no forces.
+        if (this.remoteDriverId !== null && !this.active) {
+            this.rapierWorld.timestep = dt;
+            this.rapierWorld.step();
+            return;
+        }
 
         let engineForce = 0;
         let steering = 0;
