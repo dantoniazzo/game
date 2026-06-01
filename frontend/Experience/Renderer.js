@@ -16,18 +16,19 @@ export default class Renderer {
         this.renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
-            logarithmicDepthBuffer: false,
+            powerPreference: 'high-performance',
         });
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.0;
+        // NoToneMapping skips the tone-map post-process each frame
+        this.renderer.toneMapping = THREE.NoToneMapping;
         this.renderer.setSize(this.sizes.width, this.sizes.height);
-        this.renderer.setPixelRatio(this.sizes.pixelRatio);
+        // Cap at 1.5 — retina beyond this gives diminishing returns vs GPU cost
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     }
 
     onResize() {
         this.renderer.setSize(this.sizes.width, this.sizes.height);
-        this.renderer.setPixelRatio(this.sizes.pixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     }
 
     update() {

@@ -64,6 +64,12 @@ export default class World extends EventEmitter {
     _tryCreateVehicle() {
         if (!this._rapierReady || !this._resourcesReady) return;
 
+        // CityBlock is created here so it has access to the Rapier world
+        // for registering building + lamp post colliders
+        if (!this.cityBlock) {
+            this.cityBlock = new CityBlock({ rapierWorld: this.rapierWorld });
+        }
+
         const chassisGLTF = this.resources.items["vehicleChassis"];
         const wheelGLTF   = this.resources.items["vehicleWheel"];
 
