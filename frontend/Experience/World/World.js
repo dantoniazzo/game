@@ -46,13 +46,10 @@ export default class World extends EventEmitter {
         // Physics world with standard gravity
         this.rapierWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
 
-        // Ground collider matching the visual ground:
-        // visual ground is a 100×100 plane at y=0; Octree collider is
-        // BoxGeometry(100, 0.5, 100) centred at y=-0.25.
+        // Ground collider — matches the 320×320 visual ground CityBlock creates
         const groundDesc = RAPIER.RigidBodyDesc.fixed();
         const groundBody = this.rapierWorld.createRigidBody(groundDesc);
-        // cuboid half-extents: 50 in X/Z, 0.25 in Y, positioned at y=-0.25
-        const groundCollider = RAPIER.ColliderDesc.cuboid(50, 0.25, 50)
+        const groundCollider = RAPIER.ColliderDesc.cuboid(160, 0.25, 160)
             .setTranslation(0, -0.25, 0)
             .setFriction(1.0);
         this.rapierWorld.createCollider(groundCollider, groundBody);
@@ -93,24 +90,16 @@ export default class World extends EventEmitter {
     }
 
     createGround() {
-        const size = 100;
-        const geometry = new THREE.PlaneGeometry(size, size, 20, 20);
-        geometry.rotateX(-Math.PI / 2);
-
-        // Invisible — CityBlock renders the visual ground on top
-        const material = new THREE.MeshBasicMaterial({ visible: false });
-
-        this.ground = new THREE.Mesh(geometry, material);
-        this.experience.scene.add(this.ground);
-
-        // Collider for Octree (player collision)
-        const colliderGeometry = new THREE.BoxGeometry(size, 0.5, size);
-        const colliderMaterial = new THREE.MeshBasicMaterial({ visible: false });
-        const collider = new THREE.Mesh(colliderGeometry, colliderMaterial);
+        // The visual ground is rendered by CityBlock (320×320 asphalt plane).
+        // This invisible Octree collider just needs to cover the same area.
+        const size = 320;
+        const collider = new THREE.Mesh(
+            new THREE.BoxGeometry(size, 0.5, size),
+            new THREE.MeshBasicMaterial({ visible: false }),
+        );
         collider.position.y = -0.25;
         collider.updateMatrixWorld(true);
         this.experience.scene.add(collider);
-
         this.octree.fromGraphNode(collider);
     }
 
