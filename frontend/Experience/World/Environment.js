@@ -10,13 +10,21 @@ export default class Environment {
     }
 
     setEnvironment() {
-        this.scene.background = new THREE.Color("#0a0a12");
+        // Daytime sky — soft blue so the grass + cloud-shadow shader reads well
+        this.scene.background = new THREE.Color("#a9cdf0");
 
-        const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-        this.scene.add(ambient);
+        // Sky/ground hemisphere fill gives the city soft, natural ambient colour
+        this.hemiLight = new THREE.HemisphereLight("#bfe0ff", "#5e6b48", 0.95);
+        this.hemiLight.position.set(0, 50, 0);
+        this.scene.add(this.hemiLight);
 
-        this.sunLight = new THREE.DirectionalLight("#4466aa", 0.8);
-        this.sunLight.position.set(10, 15, 10);
+        // A little flat ambient so shadowed faces never go fully black
+        this.ambient = new THREE.AmbientLight(0xffffff, 0.25);
+        this.scene.add(this.ambient);
+
+        // Warm directional sun, high in the sky
+        this.sunLight = new THREE.DirectionalLight("#fff3df", 1.7);
+        this.sunLight.position.set(60, 90, 40);
         this.scene.add(this.sunLight);
     }
 

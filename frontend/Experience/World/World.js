@@ -10,6 +10,11 @@ import Environment from "./Environment.js";
 import Compass from "./Compass.js";
 import Vehicle from "./Vehicle/Vehicle.js";
 import CityBlock from "./CityBlock.js";
+import Park from "./Park/Park.js";
+
+// 2×2 block green space near the player spawn, bounded by the surrounding
+// roads (inner road edges at ±7 of the x=0/120 and z=0/120 road centre-lines).
+const PARK_REGION = { minX: 7, maxX: 113, minZ: 7, maxZ: 113 };
 
 export default class World extends EventEmitter {
     constructor() {
@@ -64,7 +69,18 @@ export default class World extends EventEmitter {
         // CityBlock is created here so it has access to the Rapier world
         // for registering building + lamp post colliders
         if (!this.cityBlock) {
-            this.cityBlock = new CityBlock({ rapierWorld: this.rapierWorld });
+            this.cityBlock = new CityBlock({
+                rapierWorld: this.rapierWorld,
+                parkRegions: [PARK_REGION],
+            });
+        }
+
+        // Park fills the reserved blocks with grass, paths, trees and benches
+        if (!this.park) {
+            this.park = new Park({
+                rapierWorld: this.rapierWorld,
+                region: PARK_REGION,
+            });
         }
 
         const chassisGLTF = this.resources.items["vehicleChassis"];
@@ -107,5 +123,6 @@ export default class World extends EventEmitter {
         if (this.player) this.player.update();
         if (this.vehicle) this.vehicle.update(this.experience.time.delta);
         if (this.compass) this.compass.update();
+        if (this.park) this.park.update();
     }
 }

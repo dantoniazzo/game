@@ -180,10 +180,14 @@ export class GrassMaterial extends THREE.ShaderMaterial {
 }
 
 export class GrassGeometry extends THREE.InstancedBufferGeometry {
-    constructor({ bladeWidth, bladeHeight, bladeJoints, instances, getGroundHeight, area }) {
+    constructor({ bladeWidth, bladeHeight, bladeJoints, instances, getGroundHeight, area, mask }) {
         super();
 
         this.getGroundHeight = getGroundHeight;
+        // Optional predicate (x, z) => boolean — return false to keep grass out
+        // of an area (e.g. paths, plazas). Rejected samples are retried so the
+        // surrounding lawn keeps its density.
+        this.mask = mask || null;
 
         const baseGeometry = new THREE.PlaneGeometry(
             bladeWidth,
@@ -237,8 +241,23 @@ export class GrassGeometry extends THREE.InstancedBufferGeometry {
         const max = 0.25;
 
         for (let i = 0; i < instances; i++) {
-            const offsetX = area.minX + Math.random() * (area.maxX - area.minX);
-            const offsetZ = area.minZ + Math.random() * (area.maxZ - area.minZ);
+            let offsetX, offsetZ;
+            if (this.mask) {
+                // Retry a few times so masked-out regions don't thin the lawn.
+                let accepted = false;
+                for (let attempt = 0; attempt < 8; attempt++) {
+                    offsetX = area.minX + Math.random() * (area.maxX - area.minX);
+                    offsetZ = area.minZ + Math.random() * (area.maxZ - area.minZ);
+                    if (this.mask(offsetX, offsetZ)) {
+                        accepted = true;
+                        break;
+                    }
+                }
+                if (!accepted) continue;
+            } else {
+                offsetX = area.minX + Math.random() * (area.maxX - area.minX);
+                offsetZ = area.minZ + Math.random() * (area.maxZ - area.minZ);
+            }
             const offsetY = this.getGroundHeight(offsetX, offsetZ);
             offsets.push(offsetX, offsetY, offsetZ);
 

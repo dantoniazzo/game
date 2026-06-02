@@ -23,6 +23,11 @@ export default [
                     path: "textures/grass-blade-alpha.jpg",
                 },
                 {
+                    name: "parkGround",
+                    type: "imageTexture",
+                    path: "textures/baked/grass.jpg",
+                },
+                {
                     name: "vehicleChassis",
                     type: "glbModel",
                     path: "/models/chassis-draco.glb",
