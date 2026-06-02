@@ -205,10 +205,7 @@ export default class WelcomeScreen {
                 );
                 break;
             case "quit":
-                this.openPanel(
-                    "Quit Game",
-                    "There's no leaving the city just yet — close the browser tab to bail out for now."
-                );
+                this.quitGame();
                 break;
         }
     }
@@ -253,12 +250,12 @@ export default class WelcomeScreen {
         setTimeout(() => input.focus(), 60);
     }
 
-    openPanel(title, body) {
+    openPanel(title, body, { badge = true, kicker = "Menu" } = {}) {
         this.cardEl.innerHTML = `
-            <div class="gta-card__kicker">Menu</div>
+            <div class="gta-card__kicker">${kicker}</div>
             <h2 class="gta-card__title">${title}</h2>
             <p class="gta-card__sub">${body}</p>
-            <div class="gta-card__badge">Coming&nbsp;Soon</div>
+            ${badge ? '<div class="gta-card__badge">Coming&nbsp;Soon</div>' : ""}
             <div class="gta-card__actions">
                 <button class="gta-btn" data-cancel>Back</button>
             </div>
@@ -267,6 +264,20 @@ export default class WelcomeScreen {
             .querySelector("[data-cancel]")
             .addEventListener("click", () => this.closeOverlay());
         this.showOverlay();
+    }
+
+    quitGame() {
+        // window.close() only succeeds for windows opened by a script; most
+        // browsers silently block it for the main tab. Try it, then fall back
+        // to a "close manually" message for the (common) blocked case.
+        window.close();
+        setTimeout(() => {
+            this.openPanel(
+                "Thanks for Playing",
+                "Your browser kept this tab open — close it manually to leave the city.",
+                { badge: false, kicker: "Quit Game" }
+            );
+        }, 250);
     }
 
     showOverlay() {

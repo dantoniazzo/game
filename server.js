@@ -16,6 +16,16 @@ const io = new Server(server, {
 
 app.use(express.static("dist"));
 
+// Lightweight health check the loading screen hits to wake the server.
+// Idle free-tier hosts sleep when inactive and cold-start on the first
+// request; pinging this while the menu loads hides that spin-up time.
+// MUST stay above the "*" catch-all below, which would otherwise swallow it
+// and return index.html.
+app.get("/ping", (req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.json({ status: "ok", time: Date.now() });
+});
+
 const indexPath = path.join(process.cwd(), "dist", "index.html");
 
 app.get("*", (req, res) => {

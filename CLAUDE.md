@@ -139,7 +139,8 @@ Items: **Start Game, Settings, Online, Social Club, Quit Game**. Navigate with
 closes an open card.
 - **Start Game** → `startGame()` with a random `Player####` name.
 - **Online** → opens the shared overlay card with a username `<input>`; submit (non-empty) → `startGame(username)`. Empty input shake-animates.
-- **Settings / Social Club / Quit Game** → open the same card as themed **"Coming Soon"** placeholders (per current scope — no real functionality yet).
+- **Settings / Social Club** → open the shared card as themed **"Coming Soon"** placeholders (no real functionality yet).
+- **Quit Game** → `quitGame()` calls `window.close()` (only succeeds for script-opened tabs); when the browser blocks it, it falls back to a "close the tab manually" card.
 
 The menu stays in a **LOADING** state (animated dots) until `resources` emit
 `"ready"`; that adds `.is-ready` to `.gta-screen`, which fades/staggers the menu
