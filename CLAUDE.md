@@ -94,6 +94,8 @@ New solid scenery that should stop **both** the player and the car must register
 
 ### Backend (`server.js`)
 
+HTTP: serves the built `dist/`, plus a `GET /ping` health route (returns `{status:"ok"}` with `Access-Control-Allow-Origin: *`) used by the WelcomeScreen to wake the server. **It is declared before the `app.get("*")` catch-all** — that catch-all returns `index.html` for everything else, so any route added after it is unreachable.
+
 Two Socket.io namespaces:
 - `/chat` — broadcast messages between clients.
 - `/update` — maintains a `connectedSockets` Map; a 20 ms `setInterval` per socket broadcasts the full player list. Only players with both `name` and `avatarSkin` set are included.
@@ -142,9 +144,16 @@ closes an open card.
 - **Settings / Social Club** → open the shared card as themed **"Coming Soon"** placeholders (no real functionality yet).
 - **Quit Game** → `quitGame()` calls `window.close()` (only succeeds for script-opened tabs); when the browser blocks it, it falls back to a "close the tab manually" card.
 
-The menu stays in a **LOADING** state (animated dots) until `resources` emit
-`"ready"`; that adds `.is-ready` to `.gta-screen`, which fades/staggers the menu
-in. `startGame(name)` mirrors the old Preloader handoff exactly: `socket.emit("setName", name)` + `socket.emit("setAvatar", "mike")`, then `camera.pointerLockEnabled = true`, then fades the overlay out (`.is-leaving`) and removes it after 1 s. Re-entry is guarded by a `_started` flag.
+The menu stays in a **LOADING** state (animated dots) until **both** `resources`
+emit `"ready"` **and** the backend is awake (`_resourcesReady && _backendReady`
+→ `tryReveal()` adds `.is-ready` to `.gta-screen`, which fades/staggers the menu
+in). `pingBackend()` `fetch`es `GET /ping` (on `VITE_SERVER_URL` or same origin)
+the moment the screen mounts to spin up an idle/sleeping host, retrying until a
+non-5xx response or a 60 s cap (then it lets the player in anyway so a dead
+backend never traps them; single-player works offline). A connected `/update`
+socket also resolves `_backendReady`, whichever happens first. On a slow cold
+start the loading label switches to "Waking up the city". Skipped in the pure
+`frontend-dev` server (`import.meta.env.DEV`), which has no backend. `startGame(name)` mirrors the old Preloader handoff exactly: `socket.emit("setName", name)` + `socket.emit("setAvatar", "mike")`, then `camera.pointerLockEnabled = true`, then fades the overlay out (`.is-leaving`) and removes it after 1 s. Re-entry is guarded by a `_started` flag.
 
 ### Knobs / next steps
 - Menu items + their actions live in the `MENU` array at the top of `WelcomeScreen.js`; the default skin is `DEFAULT_SKIN = "mike"` (only `mike`/`monster` exist — see `assets.js`).

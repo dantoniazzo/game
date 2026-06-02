@@ -45,7 +45,25 @@ export default class WelcomeScreen {
         this.build();
         this.bindKeys();
 
-        this.resources.on("ready", () => this.onReady());
+        // The loading screen stays up until BOTH the 3D assets have loaded and
+        // the backend has woken up. Idle hosting sleeps the API when inactive
+        // and it cold-starts slowly on the first request (see pingBackend()),
+        // so we hide that spin-up behind the loading screen instead of letting
+        // the player hit it when the world tries to sync.
+        this._resourcesReady = false;
+        this._backendReady = false;
+
+        this.resources.on("ready", () => this.onResourcesReady());
+
+        // Actively wake the backend while the player sits on the loading screen.
+        this.pingBackend();
+
+        // A connected /update socket is also a definitive "backend awake"
+        // signal — resolve on whichever fires first.
+        if (this.socket) {
+            if (this.socket.connected) this.onBackendReady();
+            else this.socket.once("connect", () => this.onBackendReady());
+        }
     }
 
     // ─── fonts ────────────────────────────────────────────────────────────────
@@ -299,9 +317,94 @@ export default class WelcomeScreen {
 
     // ─── lifecycle ─────────────────────────────────────────────────────────--
 
-    onReady() {
-        this.state = "menu";
-        this.root.classList.add("is-ready");
+    onResourcesReady() {
+        this._resourcesReady = true;
+        this.tryReveal();
+    }
+
+    onBackendReady() {
+        if (this._backendReady) return;
+        this._backendReady = true;
+        this.tryReveal();
+    }
+
+    // Reveal the menu only once both the assets and the backend are ready.
+    tryReveal() {
+        if (this.state === "menu") return;
+        if (this._resourcesReady && this._backendReady) {
+            this.state = "menu";
+            this.root.classList.add("is-ready");
+        }
+    }
+
+    setLoadingText(text) {
+        const el = this.root.querySelector(".gta-loading__text");
+        if (el) el.textContent = text;
+    }
+
+    _delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Wake the backend while the loading screen is showing. Idle free-tier
+     * hosts (Render/Railway/Vercel, etc.) sleep when inactive and take several
+     * seconds to cold-start on the first request — without this the player
+     * hits that delay the moment the world tries to sync with the server.
+     *
+     * Retries until a response arrives (any non-5xx = awake) or MAX_WAIT_MS
+     * elapses, then lets the player in regardless so a down backend never
+     * traps them on the loading screen (single-player still works offline).
+     */
+    async pingBackend() {
+        // No backend in the pure-frontend HMR dev server — don't block on it.
+        if (import.meta.env.DEV) {
+            this.onBackendReady();
+            return;
+        }
+
+        const base = import.meta.env.VITE_SERVER_URL || window.location.href;
+        let url;
+        try {
+            url = new URL("/ping", base).toString();
+        } catch (e) {
+            url = "/ping";
+        }
+
+        const MAX_WAIT_MS = 60000;
+        const PER_TRY_MS = 8000;
+        const start = Date.now();
+        let attempt = 0;
+
+        while (Date.now() - start < MAX_WAIT_MS) {
+            attempt += 1;
+            if (attempt === 2) this.setLoadingText("Waking up the city");
+
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), PER_TRY_MS);
+                const res = await fetch(url, {
+                    method: "GET",
+                    cache: "no-store",
+                    signal: controller.signal,
+                });
+                clearTimeout(timer);
+
+                // Any real response (even a 404) means the server is up; only
+                // gateway / 5xx errors mean it's still spinning up.
+                if (res.status < 500) {
+                    this.onBackendReady();
+                    return;
+                }
+            } catch (e) {
+                // Network error or timeout → still cold; fall through and retry.
+            }
+
+            await this._delay(1500);
+        }
+
+        // Gave up waiting — let the player in anyway.
+        this.onBackendReady();
     }
 
     randomName() {
