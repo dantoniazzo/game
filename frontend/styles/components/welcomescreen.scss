@@ -1,0 +1,557 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  WelcomeScreen — GTA VI–style neon purple main menu / entry screen.
+//  Behaviour lives in Experience/WelcomeScreen.js. Pure CSS visuals: a sunset
+//  gradient, palm-tree silhouettes, a gradient "VI" logo and a neon menu.
+// ─────────────────────────────────────────────────────────────────────────────
+
+$gta-pink: #ff3d8b;
+$gta-pink-light: #ff5aa8;
+$gta-purple: #bd4ee0;
+$gta-blue: #62b4ff;
+$gta-font: "Gilroy", system-ui, -apple-system, "Segoe UI", sans-serif;
+$gta-display: "Anton", "Arial Narrow", Impact, sans-serif;
+
+.gta-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    overflow: hidden;
+    color: #fff;
+    font-family: $gta-font;
+    opacity: 1;
+    transition: opacity 1s ease;
+    user-select: none;
+    -webkit-user-select: none;
+
+    &.is-leaving {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    // Decorative layers never eat clicks
+    .gta-bg,
+    .gta-glow,
+    .gta-palm,
+    .gta-vignette,
+    .gta-grain {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+    }
+}
+
+// ─── background sunset ──────────────────────────────────────────────────────
+
+.gta-bg {
+    background: linear-gradient(
+        180deg,
+        #b9683f 0%,
+        #a64a64 20%,
+        #7e2f63 40%,
+        #5a1f55 60%,
+        #371241 80%,
+        #1c0a29 100%
+    );
+}
+
+.gta-glow {
+    background: radial-gradient(
+        62% 44% at 50% 33%,
+        rgba(255, 70, 165, 0.55) 0%,
+        rgba(216, 60, 190, 0.28) 38%,
+        rgba(120, 40, 120, 0) 70%
+    );
+    animation: gtaGlowPulse 8s ease-in-out infinite;
+}
+
+.gta-vignette {
+    background: radial-gradient(
+        125% 100% at 50% 38%,
+        transparent 52%,
+        rgba(10, 3, 18, 0.72) 100%
+    );
+}
+
+.gta-grain {
+    opacity: 0.06;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+// ─── palm silhouettes ───────────────────────────────────────────────────────
+
+.gta-palm {
+    height: 94vh;
+    width: auto;
+    bottom: -6vh;
+    top: auto;
+    color: #190a26;
+    filter: drop-shadow(0 0 30px rgba(20, 5, 30, 0.5));
+
+    &--left {
+        left: -7vw;
+        right: auto;
+    }
+    &--right {
+        right: -7vw;
+        left: auto;
+        transform: scaleX(-1);
+    }
+
+    &__svg {
+        height: 100%;
+        width: auto;
+        transform-origin: 62% 100%;
+        animation: gtaPalmSway 7s ease-in-out infinite;
+    }
+
+    &__trunk,
+    &__svg use,
+    &__svg circle {
+        fill: currentColor;
+    }
+}
+
+// ─── foreground content ─────────────────────────────────────────────────────
+
+.gta-content {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4vh 5vw;
+    text-align: center;
+}
+
+// ─── logo ───────────────────────────────────────────────────────────────────
+
+.gta-logo {
+    position: relative;
+    animation: gtaLogoIn 1s ease both, gtaFloat 6s ease-in-out 1s infinite;
+
+    &__vi {
+        display: block;
+        width: clamp(280px, 46vw, 540px);
+        height: auto;
+        margin: 0 auto;
+        filter: drop-shadow(0 0 18px rgba(255, 60, 150, 0.85))
+            drop-shadow(0 0 44px rgba(150, 60, 255, 0.55));
+    }
+
+    &__vi-text {
+        font-family: $gta-display;
+        font-size: 250px;
+        letter-spacing: -4px;
+        stroke: #fff;
+        stroke-width: 6px;
+        paint-order: stroke fill;
+    }
+
+    &__wordmark {
+        font-family: $gta-display;
+        font-size: clamp(24px, 4.6vw, 54px);
+        letter-spacing: 1px;
+        line-height: 1;
+        color: #fff;
+        margin-top: -0.45em;
+        -webkit-text-stroke: 1px rgba(40, 8, 36, 0.55);
+        text-shadow: 0 2px 0 rgba(40, 8, 36, 0.5),
+            0 0 22px rgba(255, 110, 180, 0.45);
+    }
+}
+
+// ─── menu ───────────────────────────────────────────────────────────────────
+
+.gta-menu {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5vh;
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+    pointer-events: none;
+
+    .gta-screen.is-ready & {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+}
+
+.gta-item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    padding: 7px 30px;
+    cursor: pointer;
+    font-weight: 900;
+    font-style: italic;
+    font-size: clamp(19px, 2.5vw, 29px);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+    transition: color 0.18s ease, transform 0.18s ease, text-shadow 0.18s ease;
+
+    // staggered entrance
+    @for $i from 1 through 5 {
+        &:nth-child(#{$i}) {
+            .gta-screen.is-ready & {
+                transition-delay: #{0.08s * $i};
+            }
+        }
+    }
+
+    &__chev {
+        color: $gta-pink;
+        opacity: 0;
+        transform: translateX(-10px);
+        transition: opacity 0.18s ease, transform 0.18s ease;
+        text-shadow: 0 0 10px $gta-pink;
+    }
+
+    &.is-selected,
+    &:hover {
+        color: #fff;
+        transform: translateX(8px);
+        text-shadow: 0 0 10px $gta-pink, 0 0 24px rgba(189, 78, 224, 0.8);
+
+        .gta-item__chev {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+}
+
+// ─── loading state ──────────────────────────────────────────────────────────
+
+.gta-loading {
+    margin-top: 6vh;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.82);
+
+    .gta-screen.is-ready & {
+        display: none;
+    }
+
+    .gta-dots {
+        display: inline-flex;
+        gap: 5px;
+
+        i {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: $gta-pink-light;
+            box-shadow: 0 0 8px $gta-pink;
+            animation: gtaDots 1.2s ease-in-out infinite;
+
+            &:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            &:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+        }
+    }
+}
+
+// ─── nav hint ───────────────────────────────────────────────────────────────
+
+.gta-hint {
+    display: flex;
+    gap: 26px;
+    margin-top: 4vh;
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    transition: opacity 0.6s ease 0.5s;
+
+    .gta-screen.is-ready & {
+        opacity: 1;
+    }
+
+    b {
+        color: $gta-pink-light;
+        font-weight: 700;
+    }
+}
+
+// ─── footer ─────────────────────────────────────────────────────────────────
+
+.gta-footer {
+    position: absolute;
+    z-index: 10;
+    bottom: 16px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+// ─── overlay card (Online input + Coming Soon panels) ───────────────────────
+
+.gta-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(10, 4, 16, 0.55);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity 0.24s ease;
+
+    &[hidden] {
+        display: none;
+    }
+    &.is-open {
+        opacity: 1;
+    }
+}
+
+.gta-card {
+    width: min(430px, 90vw);
+    padding: 34px 32px;
+    border-radius: 18px;
+    text-align: center;
+    background: linear-gradient(
+        160deg,
+        rgba(62, 22, 74, 0.88),
+        rgba(28, 10, 40, 0.94)
+    );
+    border: 1px solid rgba(255, 80, 170, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+        0 0 44px rgba(255, 60, 150, 0.35), 0 24px 60px rgba(0, 0, 0, 0.55);
+    transform: translateY(10px) scale(0.94);
+    transition: transform 0.24s ease;
+
+    .gta-overlay.is-open & {
+        transform: translateY(0) scale(1);
+    }
+
+    &--shake {
+        animation: gtaShake 0.4s ease;
+    }
+
+    &__kicker {
+        font-weight: 800;
+        font-size: 12px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: $gta-pink-light;
+        margin-bottom: 8px;
+    }
+
+    &__title {
+        font-family: $gta-display;
+        font-size: 30px;
+        font-weight: 400;
+        letter-spacing: 0.5px;
+        line-height: 1.05;
+        margin-bottom: 12px;
+    }
+
+    &__sub {
+        font-size: 14px;
+        line-height: 1.55;
+        color: rgba(255, 255, 255, 0.72);
+        margin-bottom: 22px;
+    }
+
+    &__badge {
+        display: inline-block;
+        margin-bottom: 22px;
+        padding: 6px 15px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: 11px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: #ffd9ec;
+        background: rgba(255, 61, 139, 0.16);
+        border: 1px solid rgba(255, 90, 170, 0.5);
+    }
+
+    &__actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+    }
+}
+
+.gta-input {
+    width: 100%;
+    padding: 14px 16px;
+    margin-bottom: 22px;
+    font-family: $gta-font;
+    font-size: 16px;
+    text-align: center;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(255, 90, 170, 0.5);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+
+    &::placeholder {
+        color: rgba(255, 255, 255, 0.4);
+    }
+    &:focus {
+        border-color: $gta-pink-light;
+        box-shadow: 0 0 14px rgba(255, 90, 170, 0.5);
+    }
+}
+
+.gta-btn {
+    padding: 12px 26px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: $gta-font;
+    font-weight: 900;
+    font-style: italic;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #fff;
+    background: linear-gradient(90deg, $gta-pink, $gta-purple);
+    box-shadow: 0 6px 18px rgba(255, 60, 150, 0.4);
+    transition: transform 0.12s ease, filter 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+        filter: brightness(1.1);
+        transform: translateY(-1px);
+    }
+    &:active {
+        transform: translateY(0);
+    }
+
+    &--ghost {
+        background: transparent;
+        border: 1.5px solid rgba(255, 255, 255, 0.3);
+        box-shadow: none;
+        color: rgba(255, 255, 255, 0.85);
+
+        &:hover {
+            border-color: $gta-pink-light;
+            color: #fff;
+            filter: none;
+        }
+    }
+}
+
+// ─── keyframes ──────────────────────────────────────────────────────────────
+
+@keyframes gtaGlowPulse {
+    0%,
+    100% {
+        opacity: 0.85;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+@keyframes gtaPalmSway {
+    0%,
+    100% {
+        transform: rotate(-1.3deg);
+    }
+    50% {
+        transform: rotate(1.3deg);
+    }
+}
+
+@keyframes gtaLogoIn {
+    from {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes gtaFloat {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+@keyframes gtaDots {
+    0%,
+    100% {
+        opacity: 0.3;
+        transform: translateY(0);
+    }
+    50% {
+        opacity: 1;
+        transform: translateY(-4px);
+    }
+}
+
+@keyframes gtaShake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    20% {
+        transform: translateX(-8px);
+    }
+    40% {
+        transform: translateX(8px);
+    }
+    60% {
+        transform: translateX(-5px);
+    }
+    80% {
+        transform: translateX(5px);
+    }
+}
+
+// ─── responsive ─────────────────────────────────────────────────────────────
+
+@media (max-width: 600px) {
+    .gta-palm {
+        height: 60vh;
+        opacity: 0.85;
+    }
+    .gta-item {
+        letter-spacing: 1px;
+    }
+    .gta-footer {
+        font-size: 9px;
+        padding: 0 12px;
+    }
+}
+
+// Hide the keyboard hint on touch-only devices
+@media (hover: none) and (pointer: coarse) {
+    .gta-hint {
+        display: none;
+    }
+}

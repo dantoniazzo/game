@@ -7,7 +7,7 @@ import assets from "./Utils/assets.js";
 
 import Camera from "./Camera.js";
 import Renderer from "./Renderer.js";
-import Preloader from "./Preloader.js";
+import WelcomeScreen from "./WelcomeScreen.js";
 
 import World from "./World/World.js";
 
@@ -30,7 +30,7 @@ export default class Experience {
         this.setCamera();
         this.setRenderer();
         this.setResources();
-        this.setPreloader();
+        this.setWelcomeScreen();
         this.setWorld();
 
         this.sizes.on("resize", () => {
@@ -56,8 +56,8 @@ export default class Experience {
         this.resources = new Resources(assets);
     }
 
-    setPreloader() {
-        this.preloader = new Preloader();
+    setWelcomeScreen() {
+        this.welcomeScreen = new WelcomeScreen();
     }
 
     setWorld() {
@@ -70,7 +70,7 @@ export default class Experience {
     }
 
     update() {
-        if (this.preloader) this.preloader.update();
+        if (this.welcomeScreen) this.welcomeScreen.update();
         if (this.camera) this.camera.update();
         if (this.renderer) this.renderer.update();
         if (this.world) this.world.update();

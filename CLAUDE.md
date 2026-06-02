@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with this repository. It doubles as a **handoff document**: it is written so a fresh session (e.g. on another device) can pick up with zero prior context.
 
-> **Last substantive update:** 2026-06-02 — added the **Park / custom-shader grass / daytime environment** feature. See the [Park, Grass & Daytime Environment](#park-grass--daytime-environment) section for the full design; that was the most recent work and is the most likely thing to keep iterating on.
+> **Last substantive update:** 2026-06-02 — added the **GTA VI–style Welcome Screen / main menu** (the new entry point). See the [Welcome Screen / Main Menu](#welcome-screen--main-menu) section; that is the most recent work and the most likely thing to keep iterating on. The prior feature was the **Park / custom-shader grass / daytime environment** ([section](#park-grass--daytime-environment)).
 
 ---
 
@@ -41,7 +41,7 @@ A real-time multiplayer 3D game: a Vite/Three.js frontend bundled into `dist/`, 
 
 Entry point: `frontend/index.js` — sets up two Socket.io namespaces (`/chat`, `/update`), creates the `Experience` singleton, and wires up the chat UI.
 
-**Experience singleton** (`Experience/Experience.js`) — classic Three.js "experience" pattern. Instantiated once; subsequent `new Experience()` calls return the same instance. Holds: `scene`, `camera`, `renderer`, `resources`, `time`, `sizes`, `world`. All subsystems grab the singleton via `new Experience()`. Its `update()` is the single `requestAnimationFrame` loop and calls, in order: `preloader`, `camera`, `renderer`, `world`, `time`.
+**Experience singleton** (`Experience/Experience.js`) — classic Three.js "experience" pattern. Instantiated once; subsequent `new Experience()` calls return the same instance. Holds: `scene`, `camera`, `renderer`, `resources`, `time`, `sizes`, `world`. All subsystems grab the singleton via `new Experience()`. Its `update()` is the single `requestAnimationFrame` loop and calls, in order: `welcomeScreen`, `camera`, `renderer`, `world`, `time`.
 
 **Subsystem hierarchy:**
 ```
@@ -49,7 +49,7 @@ Experience
 ├── Sizes          – window resize tracking
 ├── Time           – delta-time loop; Time.delta is in SECONDS (capped at 60)
 ├── Resources      – asset loader (GLB models, textures) — emits "ready"
-├── Preloader      – loading screen UI
+├── WelcomeScreen  – GTA-VI-style main menu / entry point (replaces Preloader)
 ├── Camera         – PerspectiveCamera (fov 75, near 0.001, far 1000) + input mode:
 │   ├── Desktop: pointer-lock, spherical-coord third-person orbit (camera.target)
 │   └── Mobile:  OrbitControls (nipplejs joystick); camera.controls.target
@@ -107,6 +107,48 @@ Two Socket.io namespaces:
 ### Renderer / colour notes
 
 `Renderer.js` uses `outputColorSpace = SRGBColorSpace` and `toneMapping = NoToneMapping`. The grass material sets `toneMapped: false` and ends its fragment shader with `#include <tonemapping_fragment>` + `#include <colorspace_fragment>`, so it manages its own colour conversion and is consistent with the renderer. **There are no real-time shadow maps** — directional light does not cast shadows; the moving "cloud shadows" on the grass are faked entirely in the grass fragment shader.
+
+---
+
+## Welcome Screen / Main Menu
+
+The game's **entry point**. A full-screen, GTA-VI-styled neon menu that shows on
+load and hands off to the live game when the player starts. It **replaces** the
+old `Preloader` name-input flow (which auto-picked the `mike` skin).
+
+### Files
+
+| File | Role |
+| --- | --- |
+| `Experience/WelcomeScreen.js` | **NEW.** The whole menu: markup, inline SVG art (palms + "VI" logo), keyboard/mouse nav, the shared overlay card, and the start-game handoff. |
+| `styles/components/welcomescreen.scss` | All visuals — sunset gradient, palm silhouettes, gradient logo, neon menu, loading dots, overlay card. Imported in `index.scss`. |
+| `Experience/Experience.js` | Now does `setWelcomeScreen()` (was `setPreloader()`) and ticks `welcomeScreen.update()`. |
+| `Experience/Preloader.js` | **Dormant** — no longer imported (kept on disk, like `CharacterSelect.js`). |
+
+### Look
+Sunset gradient (burnt-orange → magenta → deep purple) + animated pink glow,
+two CSS-mirrored **palm-tree silhouettes** (one inline SVG, flipped via
+`scaleX(-1)`), a gradient **"VI"** logo (SVG `<text>`, blue→magenta→pink→orange,
+white outline + neon drop-shadow) with a **"grand theft auto"** wordmark, faint
+grain + vignette. Fonts: **Anton** (loaded from Google Fonts) for the logo/titles;
+the project's **Gilroy** (heavy italic) for menu items + buttons.
+
+### Menu & behaviour
+Items: **Start Game, Settings, Online, Social Club, Quit Game**. Navigate with
+`↑/↓` or `W/S`, activate with `Enter`/`Space`, or mouse hover + click; `Esc`
+closes an open card.
+- **Start Game** → `startGame()` with a random `Player####` name.
+- **Online** → opens the shared overlay card with a username `<input>`; submit (non-empty) → `startGame(username)`. Empty input shake-animates.
+- **Settings / Social Club / Quit Game** → open the same card as themed **"Coming Soon"** placeholders (per current scope — no real functionality yet).
+
+The menu stays in a **LOADING** state (animated dots) until `resources` emit
+`"ready"`; that adds `.is-ready` to `.gta-screen`, which fades/staggers the menu
+in. `startGame(name)` mirrors the old Preloader handoff exactly: `socket.emit("setName", name)` + `socket.emit("setAvatar", "mike")`, then `camera.pointerLockEnabled = true`, then fades the overlay out (`.is-leaving`) and removes it after 1 s. Re-entry is guarded by a `_started` flag.
+
+### Knobs / next steps
+- Menu items + their actions live in the `MENU` array at the top of `WelcomeScreen.js`; the default skin is `DEFAULT_SKIN = "mike"` (only `mike`/`monster` exist — see `assets.js`).
+- Colours/animation timings are SCSS vars at the top of `welcomescreen.scss` (`$gta-pink`, `$gta-purple`, …).
+- Possible follow-ups: wire **Settings** to real controls (music toggle — there's `#myAudio` + the `=` key in `index.js` — and `camera.MOUSE_SENSITIVITY`); let **Start Game** route through the dormant `CharacterSelect`; play menu music on first interaction.
 
 ---
 
