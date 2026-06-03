@@ -18,8 +18,6 @@ const _carLocal       = new THREE.Vector3();
 const _carPush        = new THREE.Vector3();
 
 // Network sync scratch objects
-const _syncPos        = new THREE.Vector3();
-const _syncQuat       = new THREE.Quaternion();
 const _syncWheelOff   = new THREE.Vector3();
 
 // Wheel local-space offsets (must match _createPhysics wheel configs)
@@ -31,11 +29,27 @@ const WHEEL_LOCAL_OFFSETS = [
 ];
 
 // ─── Vehicle ──────────────────────────────────────────────────────────────────
+//
+// One drivable car. Several of these share a single Rapier world; the world is
+// stepped ONCE per frame by VehicleFleet, not here. Each car is in one of three
+// modes that decide how its transform is produced:
+//   • "local"  – the local player is driving: physics-simulated + broadcast.
+//   • "remote" – another player is driving: transform comes from the network
+//                (the body is snapped to it each frame so the local car still
+//                collides against it like a moving obstacle).
+//   • "idle"   – nobody is driving: physics-simulated with no engine input, so
+//                it rests on its suspension and can be bumped by the local car.
 
 export default class Vehicle {
-    constructor({ rapierWorld, scene, chassisGLTF, wheelGLTF, spawnPosition }) {
+    constructor({ rapierWorld, scene, chassisGLTF, wheelGLTF, spawnPosition, id = 0, color = null, debugGUI = false }) {
         this.rapierWorld = rapierWorld;
         this.scene = scene;
+        this.id = id;
+        this.color = color;
+
+        this.mode = 'idle';            // "local" | "remote" | "idle"
+        this.active = false;           // convenience flag === (mode === "local")
+        this.remoteDriverId = null;    // socket ID of whoever else is driving this car
 
         this.controls = {
             forward: false,
@@ -45,8 +59,10 @@ export default class Vehicle {
             brake: false,
         };
 
-        this.active = false;          // true while the LOCAL player is driving
-        this.remoteDriverId = null;   // socket ID of whoever else is currently driving
+        // Latest network transform (used in "remote" mode)
+        this._netPos = new THREE.Vector3();
+        this._netQuat = new THREE.Quaternion();
+        this._hasNet = false;
 
         // Camera state read by Camera.js each frame
         this.cameraPosition = new THREE.Vector3(5, 5, -15);
@@ -56,9 +72,6 @@ export default class Vehicle {
         this._boundKeyUp = this._onKeyUp.bind(this);
 
         // ── Tunable params (mirroring the Leva controls in the sketch) ─────────
-        // All wheel options are stored here so the GUI can mutate them live;
-        // RapierRaycastVehicle reads wheel.options every frame, so changes take
-        // effect immediately without recreating anything.
         this.params = {
             // Controls
             maxForce: 500,
@@ -94,8 +107,7 @@ export default class Vehicle {
 
         this._createPhysics(spawnPosition || new THREE.Vector3(5, 2, 5));
         this._createVisuals(chassisGLTF, wheelGLTF);
-        this._createPromptUI();
-        this._createGUI();
+        if (debugGUI) this._createGUI();
     }
 
     // ─── physics setup ───────────────────────────────────────────────────────
@@ -103,7 +115,7 @@ export default class Vehicle {
     _createPhysics(spawnPosition) {
         const spawnQuat = new THREE.Quaternion().setFromAxisAngle(
             new THREE.Vector3(0, 1, 0),
-            0, // rotated 90° from original -PI/2, now faces along the E-W road
+            0, // faces along the E-W road
         );
 
         const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -170,6 +182,25 @@ export default class Vehicle {
         const chassisScene = SkeletonUtils.clone(chassisGLTF.scene);
         chassisScene.position.set(-0.2, -0.25, 0);
         chassisScene.rotation.y = Math.PI / 2;
+
+        // Per-car colour tint. SkeletonUtils.clone shares material references, so
+        // clone each material before tinting or every car would change together.
+        if (this.color != null) {
+            const tint = new THREE.Color(this.color);
+            const tintMat = (m) => {
+                const c = m.clone();
+                if (c.color) c.color.multiply(tint);
+                return c;
+            };
+            chassisScene.traverse((o) => {
+                if (o.isMesh && o.material) {
+                    o.material = Array.isArray(o.material)
+                        ? o.material.map(tintMat)
+                        : tintMat(o.material);
+                }
+            });
+        }
+
         this.chassisGroup.add(chassisScene);
         this.scene.add(this.chassisGroup);
 
@@ -189,25 +220,18 @@ export default class Vehicle {
         }
     }
 
-    // ─── lil-gui panel ───────────────────────────────────────────────────────
+    // ─── lil-gui panel (opt-in; off for the fleet to avoid N stacked panels) ───
 
     _createGUI() {
-        this.gui = new GUI({ title: 'Vehicle', width: 280 });
-        // Start hidden — shown/hidden based on vehicle proximity / active state
-        this.gui.hide();
-
+        this.gui = new GUI({ title: `Vehicle ${this.id}`, width: 280 });
         const p = this.params;
 
-        // Propagate a named set of wheel option keys to all 4 wheels live
         const syncWheels = (...keys) => {
             for (const wheel of this.rapierVehicle.wheels) {
-                for (const key of keys) {
-                    wheel.options[key] = p[key];
-                }
+                for (const key of keys) wheel.options[key] = p[key];
             }
         };
 
-        // ── Controls ────────────────────────────────────────────────────────
         const controlsFolder = this.gui.addFolder('Controls');
         controlsFolder.add(p, 'maxForce', 0, 1000, 1).name('Max Force');
         controlsFolder.add(p, 'maxSteer', 0.1, 1.5, 0.01).name('Max Steer (rad)');
@@ -217,7 +241,6 @@ export default class Vehicle {
         controlsFolder.add(p, 'angularDamping', 0, 10, 0.1).name('Angular Damping')
             .onChange(() => this.chassisBody.setAngularDamping(p.angularDamping));
 
-        // ── Suspension ──────────────────────────────────────────────────────
         const suspFolder = this.gui.addFolder('Suspension');
         suspFolder.add(p, 'suspensionStiffness', 1, 200, 1).name('Stiffness')
             .onChange(() => syncWheels('suspensionStiffness'));
@@ -225,106 +248,32 @@ export default class Vehicle {
             .onChange(() => syncWheels('suspensionRestLength'));
         suspFolder.add(p, 'maxSuspensionTravel', 0.05, 1, 0.01).name('Max Travel')
             .onChange(() => syncWheels('maxSuspensionTravel'));
-        suspFolder.add(p, 'maxSuspensionForce', 1000, 500000, 1000).name('Max Force')
-            .onChange(() => syncWheels('maxSuspensionForce'));
-        suspFolder.add(p, 'dampingRelaxation', 0, 10, 0.1).name('Damping Relax')
-            .onChange(() => syncWheels('dampingRelaxation'));
-        suspFolder.add(p, 'dampingCompression', 0, 10, 0.1).name('Damping Compress')
-            .onChange(() => syncWheels('dampingCompression'));
         suspFolder.close();
 
-        // ── Friction / Handling ─────────────────────────────────────────────
         const frictionFolder = this.gui.addFolder('Friction / Handling');
         frictionFolder.add(p, 'frictionSlip', 0, 5, 0.05).name('Friction Slip')
             .onChange(() => syncWheels('frictionSlip'));
-        frictionFolder.add(p, 'sideFrictionStiffness', 0, 5, 0.05).name('Side Friction')
-            .onChange(() => syncWheels('sideFrictionStiffness'));
-        frictionFolder.add(p, 'rollInfluence', 0, 1, 0.01).name('Roll Influence')
-            .onChange(() => syncWheels('rollInfluence'));
         frictionFolder.add(p, 'forwardAcceleration', 0.1, 5, 0.1).name('Fwd Acceleration')
             .onChange(() => syncWheels('forwardAcceleration'));
-        frictionFolder.add(p, 'sideAcceleration', 0.1, 5, 0.1).name('Side Acceleration')
-            .onChange(() => syncWheels('sideAcceleration'));
         frictionFolder.close();
-
-        // ── Sliding ─────────────────────────────────────────────────────────
-        const slidingFolder = this.gui.addFolder('Sliding');
-        slidingFolder.add(p, 'useCustomSlidingRotationalSpeed').name('Custom Slide Spin')
-            .onChange(() => syncWheels('useCustomSlidingRotationalSpeed'));
-        slidingFolder.add(p, 'customSlidingRotationalSpeed', -100, 0, 1).name('Slide Spin Speed')
-            .onChange(() => syncWheels('customSlidingRotationalSpeed'));
-        slidingFolder.close();
     }
 
-    // ─── UI prompts ──────────────────────────────────────────────────────────
+    // ─── mode / controls ───────────────────────────────────────────────────────
 
-    _createPromptUI() {
-        this.promptEl = document.createElement('div');
-        this.promptEl.textContent = 'Press F to enter vehicle';
-        Object.assign(this.promptEl.style, {
-            position: 'fixed',
-            bottom: '30%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            color: 'white',
-            fontSize: '16px',
-            fontFamily: 'sans-serif',
-            backgroundColor: 'rgba(0,0,0,0.55)',
-            padding: '8px 20px',
-            borderRadius: '6px',
-            display: 'none',
-            pointerEvents: 'none',
-            zIndex: '100',
-        });
-        document.body.appendChild(this.promptEl);
+    setMode(mode) {
+        if (mode === this.mode) return;
+        this.mode = mode;
 
-        this.exitPromptEl = document.createElement('div');
-        this.exitPromptEl.textContent = 'Press F to exit vehicle';
-        Object.assign(this.exitPromptEl.style, {
-            position: 'fixed',
-            top: '12%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            color: 'white',
-            fontSize: '14px',
-            fontFamily: 'sans-serif',
-            backgroundColor: 'rgba(0,0,0,0.55)',
-            padding: '6px 16px',
-            borderRadius: '6px',
-            display: 'none',
-            pointerEvents: 'none',
-            zIndex: '100',
-        });
-        document.body.appendChild(this.exitPromptEl);
-    }
-
-    showEnterPrompt(visible) {
-        this.promptEl.style.display = visible ? 'block' : 'none';
-        // Show the tuning panel whenever the player is close enough to interact
-        if (visible) this.gui.show(); else if (!this.active) this.gui.hide();
-    }
-
-    showExitPrompt(visible) {
-        this.exitPromptEl.style.display = visible ? 'block' : 'none';
-    }
-
-    // ─── controls ────────────────────────────────────────────────────────────
-
-    enableControls() {
-        document.addEventListener('keydown', this._boundKeyDown);
-        document.addEventListener('keyup', this._boundKeyUp);
-        this.active = true;
-        this.showExitPrompt(true);
-        this.gui.show();
-    }
-
-    disableControls() {
-        document.removeEventListener('keydown', this._boundKeyDown);
-        document.removeEventListener('keyup', this._boundKeyUp);
-        for (const key of Object.keys(this.controls)) this.controls[key] = false;
-        this.active = false;
-        this.showExitPrompt(false);
-        this.gui.hide();
+        if (mode === 'local') {
+            this.active = true;
+            document.addEventListener('keydown', this._boundKeyDown);
+            document.addEventListener('keyup', this._boundKeyUp);
+        } else {
+            this.active = false;
+            document.removeEventListener('keydown', this._boundKeyDown);
+            document.removeEventListener('keyup', this._boundKeyUp);
+            for (const key of Object.keys(this.controls)) this.controls[key] = false;
+        }
     }
 
     _onKeyDown(e) {
@@ -348,74 +297,76 @@ export default class Vehicle {
         }
     }
 
-    // ─── per-frame update ────────────────────────────────────────────────────
+    // ─── network sync (called by Player when a remote player drives this car) ──
 
-    // ─── network sync (called by Player when a remote player is driving) ─────
-
-    syncFromNetwork(posObj, quatObj) {
-        _syncPos.set(posObj.position_x, posObj.position_y, posObj.position_z);
-        _syncQuat.set(quatObj.quaternion_x, quatObj.quaternion_y,
-                      quatObj.quaternion_z, quatObj.quaternion_w);
-
-        // Move the visual chassis to the broadcast position
-        this.chassisGroup.position.copy(_syncPos);
-        this.chassisGroup.quaternion.copy(_syncQuat);
-
-        // Approximate wheel world positions from chassis transform
-        for (let i = 0; i < this.wheelMeshes.length; i++) {
-            _syncWheelOff.copy(WHEEL_LOCAL_OFFSETS[i])
-                .applyQuaternion(_syncQuat)
-                .add(_syncPos);
-            this.wheelMeshes[i].position.copy(_syncWheelOff);
-            this.wheelMeshes[i].quaternion.copy(_syncQuat);
-        }
-
-        // Keep the Rapier body in sync so physics starts from the right place
-        // when the local player takes over
-        this.chassisBody.setTranslation({ x: _syncPos.x,  y: _syncPos.y,  z: _syncPos.z  }, true);
-        this.chassisBody.setRotation   ({ x: _syncQuat.x, y: _syncQuat.y, z: _syncQuat.z, w: _syncQuat.w }, true);
-        this.chassisBody.setLinvel     ({ x: 0, y: 0, z: 0 }, true);
-        this.chassisBody.setAngvel     ({ x: 0, y: 0, z: 0 }, true);
+    setNetworkState(posObj, quatObj) {
+        this._netPos.set(posObj.position_x, posObj.position_y, posObj.position_z);
+        this._netQuat.set(
+            quatObj.quaternion_x, quatObj.quaternion_y,
+            quatObj.quaternion_z, quatObj.quaternion_w,
+        );
+        this._hasNet = true;
     }
 
-    update(delta) {
-        const dt = Math.min(delta, 0.05);
+    // ─── per-frame: pre-step (before VehicleFleet steps the world) ─────────────
+
+    // Local + idle cars: feed the raycast vehicle. Local reads the player's
+    // controls; idle applies none (rests on suspension). Must run before step().
+    applyControls(dt) {
         const p = this.params;
-
-        // When a remote player is driving, visuals are updated via syncFromNetwork().
-        // Still step Rapier (for ground/building colliders) but apply no forces.
-        if (this.remoteDriverId !== null && !this.active) {
-            this.rapierWorld.timestep = dt;
-            this.rapierWorld.step();
-            return;
-        }
-
         let engineForce = 0;
         let steering = 0;
 
-        if (this.active) {
+        if (this.mode === 'local') {
             if (this.controls.forward)  engineForce += p.maxForce;
             if (this.controls.backward) engineForce -= p.maxForce;
             if (this.controls.left)     steering    += p.maxSteer;
             if (this.controls.right)    steering    -= p.maxSteer;
         }
 
-        const brakeForce = (this.active && this.controls.brake) ? p.maxBrake : 0;
+        const brakeForce = (this.mode === 'local' && this.controls.brake) ? p.maxBrake : 0;
 
         for (let i = 0; i < this.rapierVehicle.wheels.length; i++) {
             this.rapierVehicle.setBrakeValue(brakeForce, i);
         }
-
         this.rapierVehicle.setSteeringValue(steering, 0);
         this.rapierVehicle.setSteeringValue(steering, 1);
         this.rapierVehicle.applyEngineForce(engineForce, 2);
         this.rapierVehicle.applyEngineForce(engineForce, 3);
 
-        this.rapierWorld.timestep = dt;
         this.rapierVehicle.update(dt);
-        this.rapierWorld.step();
+    }
 
-        // Sync visuals
+    // Remote cars: snap the body + visuals to the broadcast transform. Runs
+    // before step() so the local player's car collides against it.
+    applyNetworkSync() {
+        if (!this._hasNet) return;
+        const pos = this._netPos;
+        const quat = this._netQuat;
+
+        this.chassisGroup.position.copy(pos);
+        this.chassisGroup.quaternion.copy(quat);
+
+        for (let i = 0; i < this.wheelMeshes.length; i++) {
+            _syncWheelOff.copy(WHEEL_LOCAL_OFFSETS[i]).applyQuaternion(quat).add(pos);
+            this.wheelMeshes[i].position.copy(_syncWheelOff);
+            this.wheelMeshes[i].quaternion.copy(quat);
+        }
+
+        this.chassisBody.setTranslation({ x: pos.x,  y: pos.y,  z: pos.z  }, true);
+        this.chassisBody.setRotation   ({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+        this.chassisBody.setLinvel     ({ x: 0, y: 0, z: 0 }, true);
+        this.chassisBody.setAngvel     ({ x: 0, y: 0, z: 0 }, true);
+    }
+
+    // ─── per-frame: post-step (after VehicleFleet steps the world) ─────────────
+
+    // Local + idle cars read their simulated transform into the visuals (remote
+    // cars were already positioned in applyNetworkSync). Local also drives the
+    // chase camera.
+    syncVisuals(dt) {
+        if (this.mode === 'remote') return;
+
         const t = this.chassisBody.translation();
         const r = this.chassisBody.rotation();
         this.chassisGroup.position.set(t.x, t.y, t.z);
@@ -427,8 +378,7 @@ export default class Vehicle {
             this.wheelMeshes[i].quaternion.copy(ws.worldTransform.quaternion);
         }
 
-        // Camera
-        if (this.active) {
+        if (this.mode === 'local') {
             _chassisPos.set(t.x, t.y, t.z);
             _chassisRot.set(r.x, r.y, r.z, r.w);
 
@@ -462,16 +412,12 @@ export default class Vehicle {
         const carQuat   = _carCollQuat.set(r.x, r.y, r.z, r.w);
         const carQuatInv = _carCollQuatInv.copy(carQuat).conjugate();
 
-        // Half-extents matching the Rapier cuboid(2.35, 0.55, 1),
-        // padded by the capsule radius (0.35) so we push out before overlap.
         const RADIUS = capsule.radius;
         const hx = 2.35 + RADIUS;
         const hy = 0.55 + RADIUS;
         const hz = 1.0  + RADIUS;
 
-        // Check both sphere centres of the capsule
         for (const pt of [capsule.start, capsule.end]) {
-            // Into car-local space
             _carLocal.copy(pt).sub(carPos).applyQuaternion(carQuatInv);
 
             const px = hx - Math.abs(_carLocal.x);
@@ -479,7 +425,6 @@ export default class Vehicle {
             const pz = hz - Math.abs(_carLocal.z);
 
             if (px > 0 && py > 0 && pz > 0) {
-                // Overlapping — resolve along the axis of smallest penetration
                 _carPush.set(0, 0, 0);
                 if (px <= py && px <= pz) {
                     _carPush.x = px * Math.sign(_carLocal.x);
@@ -489,7 +434,6 @@ export default class Vehicle {
                     _carPush.y = py * Math.sign(_carLocal.y);
                 }
 
-                // Back to world space
                 _carPush.applyQuaternion(carQuat);
                 capsule.start.add(_carPush);
                 capsule.end.add(_carPush);

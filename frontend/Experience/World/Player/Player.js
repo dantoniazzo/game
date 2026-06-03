@@ -39,18 +39,25 @@ export default class Player {
 
   // ─── vehicle interface ──────────────────────────────────────────────────
 
-  setVehicle(vehicle) {
-    this.vehicle = vehicle;
+  setFleet(fleet) {
+    this.fleet = fleet;
   }
 
   enterVehicle() {
-    if (!this.vehicle || this.inVehicle) return;
+    if (!this.fleet || this.inVehicle) return;
+
+    // Enter the nearest car, unless another player is already driving it
+    const near = this.fleet.getNearest(this.player.collider.end, 6);
+    if (!near || this.fleet.isRemoteOccupied(near.index)) return;
+
     this.inVehicle = true;
+    this.currentVehicle = near.car;
+    this.currentVehicleIndex = near.index;
 
     // Hide the player avatar
     if (this.avatar) this.avatar.avatar.visible = false;
 
-    // Stop socket broadcast while driving
+    // Broadcast the car transform instead of the avatar while driving
     this._inVehicleFlag = true;
 
     // Disable player controls
@@ -61,18 +68,19 @@ export default class Player {
     this.actions.jump = false;
 
     // Switch camera to vehicle mode
-    this.camera.enterVehicleMode(this.vehicle);
+    this.camera.enterVehicleMode(this.currentVehicle);
 
     // Seed the vehicle camera at the current camera position so there's no jump
-    this.vehicle.cameraPosition.copy(this.camera.perspectiveCamera.position);
+    this.currentVehicle.cameraPosition.copy(this.camera.perspectiveCamera.position);
 
-    // Enable vehicle keyboard controls
-    this.vehicle.enableControls();
-    this.vehicle.showEnterPrompt(false);
+    // Take local control of this car
+    this.currentVehicle.setMode("local");
+    this.fleet.showEnterPrompt(false);
+    this.fleet.showExitPrompt(true);
   }
 
   exitVehicle() {
-    if (!this.vehicle || !this.inVehicle) return;
+    if (!this.inVehicle || !this.currentVehicle) return;
     this.inVehicle = false;
     this._inVehicleFlag = false;
 
@@ -80,7 +88,7 @@ export default class Player {
     if (this.avatar) this.avatar.avatar.visible = true;
 
     // Teleport player collider next to the car (offset sideways so they don't spawn inside)
-    const carPos = this.vehicle.getPosition();
+    const carPos = this.currentVehicle.getPosition();
     const exitOffset = new THREE.Vector3(3, 1, 0);
     const spawnPos = carPos.clone().add(exitOffset);
 
@@ -89,17 +97,23 @@ export default class Player {
     this.player.collider.end.y += this.player.height;
     this.player.velocity.set(0, 0, 0);
 
-    // Disable vehicle controls
-    this.vehicle.disableControls();
+    // Release local control (car goes idle)
+    this.currentVehicle.setMode("idle");
+    if (this.fleet) this.fleet.showExitPrompt(false);
 
     // Switch camera back to player mode
     this.camera.exitVehicleMode();
+
+    this.currentVehicle = null;
+    this.currentVehicleIndex = -1;
   }
 
   initPlayer() {
     this.player = {};
     this.inVehicle = false;
-    this.vehicle = null;
+    this.fleet = null;
+    this.currentVehicle = null;
+    this.currentVehicleIndex = -1;
 
     this.player.body = this.camera.perspectiveCamera;
     this.player.animation = "idle";
@@ -225,28 +239,6 @@ export default class Player {
           if (this.otherPlayers[player.id]) {
             const rp = this.otherPlayers[player.id];
 
-            // ── vehicle state transitions ─────────────────────────────────
-            const wasInVehicle = rp.inVehicle || false;
-            const nowInVehicle = !!player.inVehicle;
-
-            if (nowInVehicle && !wasInVehicle) {
-              // Remote player just entered the shared vehicle — hide their avatar
-              rp.model.avatar.visible  = false;
-              rp.model.nametag.visible = false;
-              // If I'm currently driving, I've been taken over — eject myself
-              if (this.inVehicle) this.exitVehicle();
-              // Mark the vehicle as being driven remotely
-              if (this.vehicle) this.vehicle.remoteDriverId = player.id;
-            } else if (!nowInVehicle && wasInVehicle) {
-              // Remote player exited — restore their avatar, free the vehicle
-              rp.model.avatar.visible  = true;
-              rp.model.nametag.visible = true;
-              if (this.vehicle && this.vehicle.remoteDriverId === player.id) {
-                this.vehicle.remoteDriverId = null;
-              }
-            }
-            rp.inVehicle = nowInVehicle;
-
             // ── position / rotation / animation ──────────────────────────
             rp.position = {
               position_x: player.position_x,
@@ -260,6 +252,33 @@ export default class Player {
               quaternion_w: player.quaternion_w,
             };
             rp.animation = { animation: player.animation };
+
+            // ── which car (if any) this player is driving ────────────────
+            const prevV = rp._prevVehicle ?? -1;
+            const nowV = Number.isInteger(player.vehicleId) ? player.vehicleId : -1;
+
+            if (nowV !== prevV) {
+              if (prevV >= 0 && this.fleet) this.fleet.releaseCar(prevV, player.id);
+
+              if (nowV >= 0) {
+                // Driving a fleet car — hide their avatar, mark the car remote
+                rp.model.avatar.visible = false;
+                rp.model.nametag.visible = false;
+                if (this.fleet) this.fleet.occupyCar(nowV, player.id);
+                // If I happen to be in that same car, step out
+                if (this.inVehicle && this.currentVehicleIndex === nowV) this.exitVehicle();
+              } else {
+                // Back on foot — restore their avatar
+                rp.model.avatar.visible = true;
+                rp.model.nametag.visible = true;
+              }
+              rp._prevVehicle = nowV;
+            }
+
+            // Feed the car its latest transform each network tick
+            if (nowV >= 0 && this.fleet) {
+              this.fleet.setRemoteState(nowV, rp.position, rp.quaternion);
+            }
           }
         }
       }
@@ -267,12 +286,11 @@ export default class Player {
 
     this.socket.on("removePlayer", (id) => {
       this.disconnectedPlayerId = id;
+      if (!this.otherPlayers[id]) return;
 
-      // If this player was driving, free the shared vehicle
-      if (this.otherPlayers[id].inVehicle && this.vehicle &&
-          this.vehicle.remoteDriverId === id) {
-        this.vehicle.remoteDriverId = null;
-      }
+      // If this player was driving a car, free it so it can be used again
+      const _leftV = this.otherPlayers[id]._prevVehicle ?? -1;
+      if (_leftV >= 0 && this.fleet) this.fleet.releaseCar(_leftV, id);
 
       this.otherPlayers[id].model.nametag.material.dispose();
       this.otherPlayers[id].model.nametag.geometry.dispose();
@@ -305,16 +323,17 @@ export default class Player {
     setInterval(() => {
       if (!this.avatar) return;
 
-      if (this._inVehicleFlag && this.vehicle) {
+      if (this._inVehicleFlag && this.currentVehicle) {
         // Broadcast car position so other players see the car moving
-        const t = this.vehicle.chassisBody.translation();
-        const r = this.vehicle.chassisBody.rotation();
+        const t = this.currentVehicle.chassisBody.translation();
+        const r = this.currentVehicle.chassisBody.rotation();
         this.socket.emit("updatePlayer", {
           position: { x: t.x, y: t.y, z: t.z },
           quaternion: [r.x, r.y, r.z, r.w],
           animation: this.player.animation,
           avatarSkin: this.player.avatarSkin,
           inVehicle: true,
+          vehicleId: this.currentVehicleIndex,
         });
       } else {
         this.socket.emit("updatePlayer", {
@@ -323,6 +342,7 @@ export default class Player {
           animation: this.player.animation,
           avatarSkin: this.player.avatarSkin,
           inVehicle: false,
+          vehicleId: -1,
         });
       }
     }, 20);
@@ -345,7 +365,7 @@ export default class Player {
     if (e.code === "KeyF") {
       if (this.inVehicle) {
         this.exitVehicle();
-      } else if (this.vehicle && this._isNearVehicle()) {
+      } else if (this.fleet && this._isNearVehicle()) {
         this.enterVehicle();
       }
       return;
@@ -563,8 +583,8 @@ export default class Player {
     this.player.collider.translate(deltaPosition);
     this.playerCollisions();
 
-    // Push player out of the car's oriented bounding box
-    if (this.vehicle) this.vehicle.resolvePlayerCollision(this.player.collider);
+    // Push player out of every car's oriented bounding box
+    if (this.fleet) this.fleet.resolvePlayerCollision(this.player.collider);
 
     if (this.camera.isMobile) {
       this.player.body.position.sub(this.camera.controls.target);
@@ -591,35 +611,34 @@ export default class Player {
   updateOtherPlayers() {
     for (let player in this.otherPlayers) {
       const rp = this.otherPlayers[player];
+      if (!rp.position) continue;
 
-      if (rp.inVehicle) {
-        // This player is driving the shared vehicle — sync the vehicle visuals
-        if (this.vehicle) this.vehicle.syncFromNetwork(rp.position, rp.quaternion);
-        // Avatar is already hidden; nothing else to update
-      } else {
-        // Normal avatar update
-        rp.model.avatar.position.set(
-          rp.position.position_x,
-          rp.position.position_y,
-          rp.position.position_z,
-        );
+      // Driving a fleet car — VehicleFleet positions the car from the network
+      // transform and the avatar is hidden, so there's nothing to update here.
+      if ((rp._prevVehicle ?? -1) >= 0) continue;
 
-        rp.model.animation.play(rp.animation.animation);
-        rp.model.animation.update(this.time.delta);
+      // Normal on-foot avatar update
+      rp.model.avatar.position.set(
+        rp.position.position_x,
+        rp.position.position_y,
+        rp.position.position_z,
+      );
 
-        rp.model.avatar.quaternion.set(
-          rp.quaternion.quaternion_x,
-          rp.quaternion.quaternion_y,
-          rp.quaternion.quaternion_z,
-          rp.quaternion.quaternion_w,
-        );
+      rp.model.animation.play(rp.animation.animation);
+      rp.model.animation.update(this.time.delta);
 
-        rp.model.nametag.position.set(
-          rp.position.position_x,
-          rp.position.position_y + 2.1,
-          rp.position.position_z,
-        );
-      }
+      rp.model.avatar.quaternion.set(
+        rp.quaternion.quaternion_x,
+        rp.quaternion.quaternion_y,
+        rp.quaternion.quaternion_z,
+        rp.quaternion.quaternion_w,
+      );
+
+      rp.model.nametag.position.set(
+        rp.position.position_x,
+        rp.position.position_y + 2.1,
+        rp.position.position_z,
+      );
     }
   }
 
@@ -742,10 +761,9 @@ export default class Player {
   // ─── vehicle proximity helper ────────────────────────────────────────────
 
   _isNearVehicle() {
-    if (!this.vehicle) return false;
-    const carPos = this.vehicle.getPosition();
-    const playerPos = this.player.collider.end;
-    return playerPos.distanceTo(carPos) < 6;
+    return this.fleet
+      ? !!this.fleet.getNearest(this.player.collider.end, 6)
+      : false;
   }
 
   update() {
@@ -765,8 +783,8 @@ export default class Player {
       this.updateOtherPlayers();
 
       // Show/hide "Press F to enter" prompt based on proximity
-      if (this.vehicle) {
-        this.vehicle.showEnterPrompt(this._isNearVehicle());
+      if (this.fleet) {
+        this.fleet.showEnterPrompt(this._isNearVehicle());
       }
     }
   }

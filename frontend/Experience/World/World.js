@@ -8,7 +8,7 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import Player from "./Player/Player.js";
 import Environment from "./Environment.js";
 import Compass from "./Compass.js";
-import Vehicle from "./Vehicle/Vehicle.js";
+import VehicleFleet from "./Vehicle/VehicleFleet.js";
 import CityBlock from "./CityBlock.js";
 import Park from "./Park/Park.js";
 
@@ -25,7 +25,7 @@ export default class World extends EventEmitter {
         this.octree = new Octree();
 
         this.player = null;
-        this.vehicle = null;
+        this.fleet = null;
 
         this._rapierReady = false;
         this._resourcesReady = false;
@@ -91,17 +91,26 @@ export default class World extends EventEmitter {
             return;
         }
 
-        this.vehicle = new Vehicle({
+        // Four cars parked on the roads around the spawn point (N/E/S/W),
+        // each tinted a different colour so players can tell them apart.
+        const carSpawns = [
+            { position: new THREE.Vector3(25, 2, 0), color: 0xff5a5a },
+            { position: new THREE.Vector3(0, 2, 25), color: 0x5a9dff },
+            { position: new THREE.Vector3(-25, 2, 0), color: 0x5ad17a },
+            { position: new THREE.Vector3(0, 2, -25), color: 0xffd24a },
+        ];
+
+        this.fleet = new VehicleFleet({
             rapierWorld: this.rapierWorld,
             scene: this.experience.scene,
             chassisGLTF,
             wheelGLTF,
-            spawnPosition: new THREE.Vector3(25, 2, 0),
+            spawns: carSpawns,
         });
 
         // Give Player a reference so it can handle enter/exit
         if (this.player) {
-            this.player.setVehicle(this.vehicle);
+            this.player.setFleet(this.fleet);
         }
     }
 
@@ -121,7 +130,7 @@ export default class World extends EventEmitter {
 
     update() {
         if (this.player) this.player.update();
-        if (this.vehicle) this.vehicle.update(this.experience.time.delta);
+        if (this.fleet) this.fleet.update(this.experience.time.delta);
         if (this.compass) this.compass.update();
         if (this.park) this.park.update();
     }

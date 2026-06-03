@@ -67,15 +67,15 @@ Experience
     ├── Environment– sky + lights (now DAYTIME)
     ├── CityBlock  – procedural city grid (roads, buildings, lamps)
     ├── Park       – grass park (NEW)
-    ├── Vehicle    – drivable Rapier raycast car
+    ├── VehicleFleet– N drivable Rapier raycast cars (multiplayer)
     └── Compass
 ```
 
 **World bootstrap order** (`World.js`) — important because Park/CityBlock depend on it:
 1. Constructor creates the `Octree` and kicks off `_initRapier()` (async: `RAPIER.init()`, build `rapierWorld` with gravity + a fixed ground collider cuboid `160×0.25×160` at `y=-0.25`).
 2. On `resources "ready"`: `createGround()` (invisible `320×0.5×320` Octree box at `y=-0.25`), then `new Player()`, `new Environment()`, `new Compass()`. Sets `_resourcesReady`, calls `_tryCreateVehicle()`.
-3. `_tryCreateVehicle()` runs only when **both** Rapier and resources are ready. It creates `CityBlock` (passing `rapierWorld` + `parkRegions`), then `Park` (passing `rapierWorld` + `region`), then the `Vehicle` (spawns at `(25, 2, 0)`), and hands the vehicle to the Player.
-4. `World.update()` ticks `player`, `vehicle`, `compass`, and `park` every frame.
+3. `_tryCreateVehicle()` runs only when **both** Rapier and resources are ready. It creates `CityBlock` (passing `rapierWorld` + `parkRegions`), then `Park` (passing `rapierWorld` + `region`), then the `VehicleFleet` (4 cars on the roads around the origin), and hands the fleet to the Player. See [Vehicles — fleet & multiplayer](#vehicles--fleet--multiplayer).
+4. `World.update()` ticks `player`, then `fleet` (which steps Rapier **once**), `compass`, and `park` every frame.
 
 **Player spawn:** the player capsule starts at the **origin `(0, 2, 0)`** (`Player.js`, `new Capsule(...)`), with a respawn point at `(0, 3, 0)`. On vehicle exit the player is teleported beside the car. The park's south-west corner sits ~10 units from origin, so it is immediately visible on spawn.
 
@@ -84,7 +84,7 @@ Experience
 | System | Library | Blocks | How scenery registers |
 | --- | --- | --- | --- |
 | **Octree** | `three/examples/jsm/math/Octree` | the **player** capsule | add invisible meshes to a `THREE.Group`, `group.updateMatrixWorld(true)`, then `octree.fromGraphNode(group)` |
-| **Rapier** | `@dimforge/rapier3d-compat` | the **vehicle** | `rapierWorld.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(…))` + `createCollider(RAPIER.ColliderDesc.cuboid/cylinder(…), rb)` |
+| **Rapier** | `@dimforge/rapier3d-compat` | the **cars** | `rapierWorld.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(…))` + `createCollider(RAPIER.ColliderDesc.cuboid/cylinder(…), rb)` |
 
 New solid scenery that should stop **both** the player and the car must register with **both** systems. `CityBlock` does this for buildings and lamps; `Park` does it for trees (benches are Octree-only — see [next steps](#current-state--possible-next-steps)).
 
@@ -189,6 +189,47 @@ Each model plays **its own embedded clips**; nothing is retargeted across rigs (
 ### Notes
 - `brute` carries the full `idle/jump/run/running-jump/walk` set; the two `asian_*_animated` rigs use `Idle/Walking/Running/Jump/Dancing/Waving`, normalized by `_resolveClips()` (running-jump → jump). All five sit at comparable heights (1.76–2.18) so the `1.3` avatar scale works without per-character tweaks.
 - **Load weight:** every roster model is preloaded up front (so any remote player's skin is ready). The character GLBs were **texture-heavy** (raw 4K PNGs — `mike.glb` was ~56 MB, 54 MB of it textures), so they're compressed by `npm run compress-models` (`scripts/compress-models.mjs`): textures → WebP @ ≤2048 px + Draco geometry, decoded transparently by `Loaders.js` (DRACOLoader at `/draco/`) and three.js (`EXT_texture_webp`). That cut the five-model roster from ~103 MB to **~15 MB** (mike 56→1.7, monster 13→1.9, brute 21→2.3; the `asian_*` rigs were already small/Draco). **Re-run it after adding or replacing a model.**
+
+---
+
+## Vehicles — fleet & multiplayer
+
+Several drivable cars share one Rapier world. Files: `World/Vehicle/Vehicle.js`
+(one car), `World/Vehicle/VehicleFleet.js` (**NEW** — owns the fleet + the single
+world step), `World/Vehicle/RapierRaycastVehicle.js` (raycast-car helper, unchanged).
+
+### Single physics step
+`rapierWorld.step()` is called **once per frame, by `VehicleFleet.update(dt)`** —
+never inside `Vehicle` (N cars each stepping the shared world was the bug to
+avoid). Per frame: every car does pre-step work → one `world.step()` → visuals
+read back. `Vehicle.update()` no longer exists; it's split into
+`applyControls(dt)` (local/idle: feed the raycast vehicle), `applyNetworkSync()`
+(remote: snap body + visuals to the network transform), and `syncVisuals(dt)`
+(local/idle: read body → meshes; local also drives the chase camera).
+
+### Car modes — `Vehicle.setMode`
+Each car is `local` | `remote` | `idle`:
+- **local** – the local player drives it: dynamic, physics-simulated, broadcast.
+- **remote** – another player drives it: the body is snapped to the broadcast transform every frame, so the local player's car still collides with it.
+- **idle** – nobody drives it: simulated with no engine input (rests on its suspension; can be bumped locally).
+
+### Multiplayer / authority
+Each client is authoritative over the car it drives. `Player` broadcasts
+`vehicleId` (fleet index, or `-1` on foot) + the chassis transform; `server.js`
+relays both in `playerData`. On every client, `Player` routes a remote driver to
+the right car (`fleet.occupyCar / releaseCar / setRemoteState`) and hides that
+player's avatar. Result: two driven cars **deflect off each other** (each is a
+solid kinematic obstacle on the other's screen). Known limits: momentum isn't
+shared, and an unowned (idle) car shoved by the local player only moves locally.
+Two players can't drive the same car (enter is blocked when `isRemoteOccupied`).
+
+### The fleet
+`World.js` spawns **4 cars** on the roads around the origin (N/E/S/W), each
+tinted a different colour (red/blue/green/yellow — materials are **cloned per
+car** so tints don't bleed). Edit the `carSpawns` array in
+`World._tryCreateVehicle()` to change count/positions/colours. The per-car
+lil-gui tuning panel is now opt-in (`debugGUI`, default off) so 4 cars don't
+stack 4 panels.
 
 ---
 

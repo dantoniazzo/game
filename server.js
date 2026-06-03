@@ -73,6 +73,7 @@ updateNameSpace.on("connection", (socket) => {
         name: "",
         avatarSkin: "",
         inVehicle: false,
+        vehicleId: -1,
     };
     connectedSockets.set(socket.id, socket);
 
@@ -111,7 +112,10 @@ updateNameSpace.on("connection", (socket) => {
         socket.userData.quaternion.w = player.quaternion[3];
         socket.userData.animation = player.animation;
         socket.userData.avatarSkin = player.avatarSkin;
-        socket.userData.inVehicle = player.inVehicle || false;
+        socket.userData.vehicleId = Number.isInteger(player.vehicleId)
+            ? player.vehicleId
+            : -1;
+        socket.userData.inVehicle = socket.userData.vehicleId >= 0;
     });
 
     setInterval(() => {
@@ -134,6 +138,7 @@ updateNameSpace.on("connection", (socket) => {
                     animation: socket.userData.animation,
                     avatarSkin: socket.userData.avatarSkin,
                     inVehicle: socket.userData.inVehicle,
+                    vehicleId: socket.userData.vehicleId,
                 });
             }
         }
