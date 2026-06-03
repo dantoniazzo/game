@@ -199,7 +199,7 @@ $gta-display: "Anton", "Arial Narrow", Impact, sans-serif;
     transition: color 0.18s ease, transform 0.18s ease, text-shadow 0.18s ease;
 
     // staggered entrance
-    @for $i from 1 through 5 {
+    @for $i from 1 through 6 {
         &:nth-child(#{$i}) {
             .gta-screen.is-ready & {
                 transition-delay: #{0.08s * $i};
@@ -226,6 +226,50 @@ $gta-display: "Anton", "Arial Narrow", Impact, sans-serif;
             transform: translateX(0);
         }
     }
+}
+
+// Character cycle row: "Character  ‹ Mike ›"
+.gta-item__value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 14px;
+    padding: 4px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 90, 170, 0.35);
+    font-style: normal;
+    text-transform: none;
+    letter-spacing: 0;
+    text-shadow: none;
+}
+
+.gta-cyc {
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0 6px;
+    font-family: $gta-font;
+    font-weight: 900;
+    font-size: 1.05em;
+    line-height: 1;
+    color: $gta-pink-light;
+    transition: color 0.15s ease, transform 0.15s ease, text-shadow 0.15s ease;
+
+    &:hover {
+        color: #fff;
+        transform: scale(1.25);
+        text-shadow: 0 0 10px $gta-pink;
+    }
+}
+
+.gta-cyc__name {
+    min-width: 96px;
+    text-align: center;
+    font-weight: 900;
+    font-size: 0.82em;
+    letter-spacing: 1px;
+    color: #fff;
 }
 
 // ─── loading state ──────────────────────────────────────────────────────────

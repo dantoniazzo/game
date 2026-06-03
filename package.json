@@ -9,14 +9,20 @@
     "backend-build": "node server.js",
     "backend-dev": "nodemon server.js",
     "dev": "concurrently --kill-others \"npm run frontend-build\" \"npm run backend-dev\"",
-    "prod-build": "vite build"
+    "prod-build": "vite build",
+    "compress-models": "node scripts/compress-models.mjs"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/extensions": "^4.3.0",
+    "@gltf-transform/functions": "^4.3.0",
     "concurrently": "^8.2.0",
+    "draco3dgltf": "^1.5.7",
     "gsap": "^3.12.2",
     "include-media": "^2.0.0",
     "nodemon": "^2.0.22",
     "sass": "^1.63.6",
+    "sharp": "^0.34.5",
     "vite": "^4.3.9"
   },
   "dependencies": {

@@ -209,7 +209,7 @@ export default class Player {
 
                 const otherSkin = this.resources.items[player.avatarSkin]
                   ? player.avatarSkin
-                  : "brute";
+                  : "mike";
                 const newAvatar = new Avatar(
                   this.resources.items[otherSkin],
                   this.scene,

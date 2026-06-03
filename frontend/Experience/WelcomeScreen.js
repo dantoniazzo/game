@@ -1,4 +1,5 @@
 import Experience from "./Experience.js";
+import characters from "./Utils/characters.js";
 
 /**
  * WelcomeScreen — the GTA VI–style main menu / entry screen.
@@ -7,27 +8,30 @@ import Experience from "./Experience.js";
  * full-screen neon-purple sunset (palm-tree silhouettes + a gradient "VI"
  * logo) and a classic console-style menu:
  *
- *   START GAME   → jump straight in with a default name
+ *   START GAME   → jump straight in with a default name (uses the chosen skin)
+ *   CHARACTER    → cycle through the roster (characters.js); ‹ / › or Enter
  *   SETTINGS     → "coming soon" panel
- *   ONLINE       → prompts for a username, then starts
+ *   ONLINE       → prompts for a username, then starts (uses the chosen skin)
  *   SOCIAL CLUB  → "coming soon" panel
- *   QUIT GAME    → "coming soon" panel
+ *   QUIT GAME    → closes the tab (falls back to a message if blocked)
  *
- * Navigation: ↑/↓ or W/S to move, Enter/Space to select, mouse hover + click,
- * Esc to close an open panel/modal. The menu stays in a LOADING state until
- * `resources` emit "ready"; starting the game reuses the same handoff the old
- * Preloader did (emit setName/setAvatar + enable pointer lock, then fade out).
+ * Navigation: ↑/↓ or W/S to move, Enter/Space to select, ←/→ (or A/D) to cycle
+ * the character when that row is selected, mouse hover + click, Esc to close an
+ * open panel/modal. The menu stays in a LOADING state until assets + backend
+ * are ready; starting reuses the old Preloader handoff (emit setName/setAvatar
+ * + enable pointer lock, then fade out).
  */
 
 const MENU = [
     { id: "start", label: "Start Game" },
+    { id: "character", label: "Character" },
     { id: "settings", label: "Settings" },
     { id: "online", label: "Online" },
     { id: "social", label: "Social Club" },
     { id: "quit", label: "Quit Game" },
 ];
 
-const DEFAULT_SKIN = "mike";
+const DEFAULT_SKIN = characters[0] ? characters[0].id : "mike";
 
 export default class WelcomeScreen {
     constructor() {
@@ -40,6 +44,9 @@ export default class WelcomeScreen {
         this.state = "loading"; // "loading" | "menu"
         this.overlayOpen = null; // null | "card"
         this._started = false;
+
+        this.characters = characters;
+        this.charIndex = 0;
 
         this.loadFonts();
         this.build();
@@ -128,10 +135,33 @@ export default class WelcomeScreen {
             el.className = "gta-item";
             el.dataset.index = String(i);
             el.setAttribute("role", "button");
-            el.innerHTML = `
-                <span class="gta-item__chev">&#9656;</span>
-                <span class="gta-item__label">${item.label}</span>
-            `;
+
+            if (item.id === "character") {
+                el.classList.add("gta-item--cycle");
+                el.innerHTML = `
+                    <span class="gta-item__chev">&#9656;</span>
+                    <span class="gta-item__label">Character</span>
+                    <span class="gta-item__value">
+                        <button class="gta-cyc" type="button" data-cyc="-1" aria-label="Previous character">&#8249;</button>
+                        <b class="gta-cyc__name"></b>
+                        <button class="gta-cyc" type="button" data-cyc="1" aria-label="Next character">&#8250;</button>
+                    </span>
+                `;
+                this.charNameEl = el.querySelector(".gta-cyc__name");
+                el.querySelectorAll(".gta-cyc").forEach((btn) => {
+                    btn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        this.setSelected(i);
+                        this.cycleCharacter(Number(btn.dataset.cyc));
+                    });
+                });
+            } else {
+                el.innerHTML = `
+                    <span class="gta-item__chev">&#9656;</span>
+                    <span class="gta-item__label">${item.label}</span>
+                `;
+            }
+
             el.addEventListener("mouseenter", () => this.setSelected(i));
             el.addEventListener("click", () => {
                 this.setSelected(i);
@@ -148,6 +178,7 @@ export default class WelcomeScreen {
             if (e.target === this.overlayEl) this.closeOverlay();
         });
 
+        this.setCharacterLabel();
         this.setSelected(0);
     }
 
@@ -178,6 +209,22 @@ export default class WelcomeScreen {
                     e.preventDefault();
                     this.move(1);
                     break;
+                case "ArrowLeft":
+                case "a":
+                case "A":
+                    if (MENU[this.selected].id === "character") {
+                        e.preventDefault();
+                        this.cycleCharacter(-1);
+                    }
+                    break;
+                case "ArrowRight":
+                case "d":
+                case "D":
+                    if (MENU[this.selected].id === "character") {
+                        e.preventDefault();
+                        this.cycleCharacter(1);
+                    }
+                    break;
                 case "Enter":
                 case " ":
                     e.preventDefault();
@@ -200,12 +247,33 @@ export default class WelcomeScreen {
         );
     }
 
+    cycleCharacter(dir) {
+        const n = this.characters.length;
+        if (n === 0) return;
+        this.charIndex = (this.charIndex + dir + n) % n;
+        this.setCharacterLabel();
+    }
+
+    setCharacterLabel() {
+        if (!this.charNameEl) return;
+        const current = this.characters[this.charIndex];
+        this.charNameEl.textContent = current ? current.label : "—";
+    }
+
+    currentSkin() {
+        const current = this.characters[this.charIndex];
+        return current ? current.id : DEFAULT_SKIN;
+    }
+
     activate(i) {
         if (this.state !== "menu") return;
         const id = MENU[i].id;
         switch (id) {
             case "start":
                 this.startGame(this.randomName());
+                break;
+            case "character":
+                this.cycleCharacter(1);
                 break;
             case "online":
                 this.openOnline();
@@ -416,7 +484,7 @@ export default class WelcomeScreen {
         this._started = true;
 
         this.socket.emit("setName", name);
-        this.socket.emit("setAvatar", DEFAULT_SKIN);
+        this.socket.emit("setAvatar", this.currentSkin());
 
         // Hand control to the game (desktop: pointer lock on next canvas click;
         // mobile ignores this flag and uses OrbitControls).

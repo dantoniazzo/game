@@ -36,21 +36,21 @@ export default class Avatar {
     this.animation.actions = {};
     this.animation.clips = {};
 
-    console.log(
-      "Animations:",
-      this.avatar.animations.map((c) => c.name),
-    );
+    // Map this model's clips onto the canonical names the player state machine
+    // drives, so any Mixamo character animates correctly regardless of how its
+    // clips were named on export (e.g. "Idle"/"Walking"/"Running"/"Jump").
+    const resolved = this._resolveClips(this.avatar.animations);
 
-    for (const clip of this.avatar.animations) {
-      this.animation.clips[clip.name] = clip;
+    for (const [name, clip] of Object.entries(resolved)) {
+      this.animation.clips[name] = clip;
       const action = this.animation.mixer.clipAction(clip);
 
-      if (JUMP_ANIMS.includes(clip.name)) {
+      if (JUMP_ANIMS.includes(name)) {
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
       }
 
-      this.animation.actions[clip.name] = action;
+      this.animation.actions[name] = action;
     }
 
     this.animation.current = "idle";
@@ -83,5 +83,42 @@ export default class Avatar {
     this.animation.update = (time) => {
       this.animation.mixer.update(time);
     };
+  }
+
+  // Resolve a model's clips to the canonical set the player state machine
+  // drives: idle, walk, run, jump, running-jump. Matching is case-insensitive
+  // and fuzzy (so Mixamo's "Idle"/"Walking"/"Running"/"Jump" work as-is), and
+  // missing clips fall back gracefully (running-jump → jump → idle). Each
+  // picked clip is cloned + renamed so the canonical actions stay distinct
+  // (LoopOnce on the jumps can't leak across names).
+  _resolveClips(animations) {
+    if (!animations || animations.length === 0) return {};
+
+    const lc = (c) => c.name.toLowerCase();
+    const findRunJump = animations.find((c) => /run/.test(lc(c)) && /jump/.test(lc(c)));
+    const findJump = animations.find((c) => /jump/.test(lc(c)) && !/run/.test(lc(c)));
+    const findRun = animations.find(
+      (c) => /(^|[^a-z])(run|jog|sprint)/.test(lc(c)) && !/jump/.test(lc(c)),
+    );
+    const findWalk = animations.find((c) => /walk/.test(lc(c)));
+    const findIdle = animations.find((c) => /idle|stand/.test(lc(c)));
+
+    const fallback = findIdle || animations[0];
+    const picks = {
+      idle: findIdle || fallback,
+      walk: findWalk || findRun || fallback,
+      run: findRun || findWalk || fallback,
+      jump: findJump || findRunJump || fallback,
+      "running-jump": findRunJump || findJump || fallback,
+    };
+
+    const out = {};
+    for (const [name, clip] of Object.entries(picks)) {
+      if (!clip) continue;
+      const cloned = clip.clone();
+      cloned.name = name;
+      out[name] = cloned;
+    }
+    return out;
   }
 }

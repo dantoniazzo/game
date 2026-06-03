@@ -1,17 +1,18 @@
+import characters from "./characters.js";
+
+// Selectable player models come from the character roster (characters.js), so
+// adding a character is a one-line change there — no edits needed here.
+const characterAssets = characters.map((c) => ({
+    name: c.id,
+    type: "glbModel",
+    path: `/models/${c.file || `${c.id}.glb`}`,
+}));
+
 export default [
     {
         westgate: {
             assets: [
-                {
-                    name: "mike",
-                    type: "glbModel",
-                    path: "/models/mike.glb",
-                },
-                {
-                    name: "monster",
-                    type: "glbModel",
-                    path: "/models/monster.glb",
-                },
+                ...characterAssets,
                 {
                     name: "cloudTexture",
                     type: "imageTexture",

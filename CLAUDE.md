@@ -20,6 +20,10 @@ npm run backend-dev
 
 # Production build (outputs to dist/)
 npm run prod-build
+
+# Compress character models in place (textures→WebP + Draco geometry)
+npm run compress-models                 # default set: mike, monster, brute
+npm run compress-models -- ninja.glb    # a specific newly-added model
 ```
 
 There is no test suite and no linter configured. **Verification = it builds + reads correctly.** To confirm a change compiles without disturbing `dist/`:
@@ -90,7 +94,7 @@ New solid scenery that should stop **both** the player and the car must register
 
 **Multiplayer sync:** the `/update` namespace ticks at ~50 Hz. Each client emits `updatePlayer` every 20 ms (position, quaternion, animation, avatar skin). The server broadcasts `playerData` (all connected players) back to every socket. `Player.setPlayerSocket()` creates `Avatar` instances for new remote players and updates them in `updateOtherPlayers()`.
 
-**Asset loading** (`Utils/assets.js`): exports an array of asset-group objects keyed by scene name (currently only `westgate`). Each asset is `{ name, type, path }` where `type` ∈ `glbModel | imageTexture | cubeTexture | videoTexture`. `Resources` loads them all, stores them on `resources.items[name]`, and emits `"ready"`. Textures live under `public/` (served verbatim; reference them **without** a leading `dist/`).
+**Asset loading** (`Utils/assets.js`): exports an array of asset-group objects keyed by scene name (currently only `westgate`). Each asset is `{ name, type, path }` where `type` ∈ `glbModel | imageTexture | cubeTexture | videoTexture`. `Resources` loads them all, stores them on `resources.items[name]`, and emits `"ready"`. Textures live under `public/` (served verbatim; reference them **without** a leading `dist/`). The player-character `glbModel` entries are **generated from the roster** in `Utils/characters.js` (the textures + vehicle parts are still listed inline) — see [Characters & player models](#characters--player-models).
 
 ### Backend (`server.js`)
 
@@ -136,10 +140,12 @@ grain + vignette. Fonts: **Anton** (loaded from Google Fonts) for the logo/title
 the project's **Gilroy** (heavy italic) for menu items + buttons.
 
 ### Menu & behaviour
-Items: **Start Game, Settings, Online, Social Club, Quit Game**. Navigate with
-`↑/↓` or `W/S`, activate with `Enter`/`Space`, or mouse hover + click; `Esc`
+Items: **Start Game, Character, Settings, Online, Social Club, Quit Game**.
+Navigate with `↑/↓` or `W/S`, activate with `Enter`/`Space`, or mouse hover +
+click; `←/→` (or `A/D`) cycle the character when that row is selected; `Esc`
 closes an open card.
-- **Start Game** → `startGame()` with a random `Player####` name.
+- **Start Game** → `startGame()` with a random `Player####` name, using the currently selected character.
+- **Character** → an inline cycle selector (`‹ Name ›`) over the roster from `Utils/characters.js`; `currentSkin()` feeds the chosen `id` into `startGame`/`Online`. See [Characters & player models](#characters--player-models).
 - **Online** → opens the shared overlay card with a username `<input>`; submit (non-empty) → `startGame(username)`. Empty input shake-animates.
 - **Settings / Social Club** → open the shared card as themed **"Coming Soon"** placeholders (no real functionality yet).
 - **Quit Game** → `quitGame()` calls `window.close()` (only succeeds for script-opened tabs); when the browser blocks it, it falls back to a "close the tab manually" card.
@@ -153,12 +159,36 @@ non-5xx response or a 60 s cap (then it lets the player in anyway so a dead
 backend never traps them; single-player works offline). A connected `/update`
 socket also resolves `_backendReady`, whichever happens first. On a slow cold
 start the loading label switches to "Waking up the city". Skipped in the pure
-`frontend-dev` server (`import.meta.env.DEV`), which has no backend. `startGame(name)` mirrors the old Preloader handoff exactly: `socket.emit("setName", name)` + `socket.emit("setAvatar", "mike")`, then `camera.pointerLockEnabled = true`, then fades the overlay out (`.is-leaving`) and removes it after 1 s. Re-entry is guarded by a `_started` flag.
+`frontend-dev` server (`import.meta.env.DEV`), which has no backend. `startGame(name)` mirrors the old Preloader handoff: `socket.emit("setName", name)` + `socket.emit("setAvatar", this.currentSkin())` (the selected roster character), then `camera.pointerLockEnabled = true`, then fades the overlay out (`.is-leaving`) and removes it after 1 s. Re-entry is guarded by a `_started` flag.
 
 ### Knobs / next steps
-- Menu items + their actions live in the `MENU` array at the top of `WelcomeScreen.js`; the default skin is `DEFAULT_SKIN = "mike"` (only `mike`/`monster` exist — see `assets.js`).
+- Menu items + their actions live in the `MENU` array at the top of `WelcomeScreen.js`; the selectable roster comes from `Utils/characters.js` (see [Characters & player models](#characters--player-models)).
 - Colours/animation timings are SCSS vars at the top of `welcomescreen.scss` (`$gta-pink`, `$gta-purple`, …).
 - Possible follow-ups: wire **Settings** to real controls (music toggle — there's `#myAudio` + the `=` key in `index.js` — and `camera.MOUSE_SENSITIVITY`); let **Start Game** route through the dormant `CharacterSelect`; play menu music on first interaction.
+
+---
+
+## Characters & player models
+
+Players can pick from a roster of Mixamo-rigged characters on the Welcome Screen.
+Full how-to (Mixamo download + Blender bundling) lives in **`CHARACTERS.md`**.
+
+### Roster — `Utils/characters.js`
+The single source of truth: an array of `{ id, label, file? }`.
+- `id` — asset key **and** the `avatarSkin` value broadcast over the network. Must match the GLB filename (minus `.glb`) unless `file` overrides it.
+- `label` — pretty name shown in the cycle selector.
+- Ships with five: `mike`, `monster`, `brute`, `asian_male_animated` (label "Vic"), `asian_female_animated` (label "Nova"). **Adding a character = drop a `.glb` in `public/models/` + one line here.**
+
+### Wiring
+- **Loading** — `Utils/assets.js` maps each roster entry to a `glbModel` asset (`/models/${file || id + ".glb"}`), so no edits to `assets.js` are needed per character.
+- **Selection** — `WelcomeScreen` renders a **Character** cycle row (`‹ Name ›`, keyboard `←/→` or click). `currentSkin()` returns the chosen `id`; `startGame()` emits `setAvatar(id)`. `Player` falls back to `mike` for any unknown/unloaded skin (both local `setAvatarSkin` and remote `playerData`).
+
+### Animations — `Avatar._resolveClips()`
+Each model plays **its own embedded clips**; nothing is retargeted across rigs (so mixing `mixamorig:` and `mixamorig12:` skeletons is fine). The state machine needs five canonical clips — `idle`, `walk`, `run`, `jump`, `running-jump` — and `_resolveClips()` fuzzy-maps a model's clip names onto them (case-insensitive: `idle/stand` → idle, `walk` → walk, `run|jog|sprint` → run, `jump` → jump, `run`+`jump` → running-jump), cloning + renaming each pick so the canonical actions stay distinct. Missing clips fall back gracefully (`running-jump` → `jump` → `idle`). This means Mixamo's default `Idle/Walking/Running/Jump` names work **without renaming**, and `running-jump` is optional.
+
+### Notes
+- `brute` carries the full `idle/jump/run/running-jump/walk` set; the two `asian_*_animated` rigs use `Idle/Walking/Running/Jump/Dancing/Waving`, normalized by `_resolveClips()` (running-jump → jump). All five sit at comparable heights (1.76–2.18) so the `1.3` avatar scale works without per-character tweaks.
+- **Load weight:** every roster model is preloaded up front (so any remote player's skin is ready). The character GLBs were **texture-heavy** (raw 4K PNGs — `mike.glb` was ~56 MB, 54 MB of it textures), so they're compressed by `npm run compress-models` (`scripts/compress-models.mjs`): textures → WebP @ ≤2048 px + Draco geometry, decoded transparently by `Loaders.js` (DRACOLoader at `/draco/`) and three.js (`EXT_texture_webp`). That cut the five-model roster from ~103 MB to **~15 MB** (mike 56→1.7, monster 13→1.9, brute 21→2.3; the `asian_*` rigs were already small/Draco). **Re-run it after adding or replacing a model.**
 
 ---
 
