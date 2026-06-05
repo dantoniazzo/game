@@ -211,17 +211,32 @@ read back. `Vehicle.update()` no longer exists; it's split into
 Each car is `local` | `remote` | `idle`:
 - **local** – the local player drives it: dynamic, physics-simulated, broadcast.
 - **remote** – another player drives it: the body is snapped to the broadcast transform every frame, so the local player's car still collides with it.
-- **idle** – nobody drives it: simulated with no engine input (rests on its suspension; can be bumped locally).
+- **idle** – nobody drives it: the **host** client simulates it (no engine input, rests on its suspension) and broadcasts its transform; every other client mirrors it as `remote`.
 
 ### Multiplayer / authority
-Each client is authoritative over the car it drives. `Player` broadcasts
-`vehicleId` (fleet index, or `-1` on foot) + the chassis transform; `server.js`
-relays both in `playerData`. On every client, `Player` routes a remote driver to
-the right car (`fleet.occupyCar / releaseCar / setRemoteState`) and hides that
-player's avatar. Result: two driven cars **deflect off each other** (each is a
-solid kinematic obstacle on the other's screen). Known limits: momentum isn't
-shared, and an unowned (idle) car shoved by the local player only moves locally.
-Two players can't drive the same car (enter is blocked when `isRemoteOccupied`).
+Every car has **exactly one authoritative client**, so all clients converge on
+identical poses. `Player._applyCarAuthority()` picks each car's mode: **I drive
+it → `local`**; **another player drives it → `remote`**; **parked → the
+server-named `host` simulates + broadcasts it (`idle`), everyone else mirrors
+(`remote`)**. Two transport channels:
+- **Driven cars** ride the player channel — `updatePlayer` carries `vehicleId` + the chassis transform; `server.js` relays it in `playerData`; `Player` routes it to the right car (`fleet.occupyCar / releaseCar / setRemoteState`) and hides that player's avatar.
+- **Parked cars** ride a host channel — the host emits `updateCars` (transforms of all its `idle` cars) every 20 ms; the server relays it as `carData`; non-host clients apply it via `setRemoteState`.
+
+The server designates the host (oldest `/update` socket, reassigned on
+disconnect) and announces it **both** via a one-shot `hostId` event **and on
+every `playerData` broadcast** (2nd arg) — the latter matters because a client
+usually connects before its `Player` listeners exist and would otherwise miss
+the one-shot event and never learn it isn't the host. `Player.isHost` /
+`_hostKnown` track it (before it's known, parked cars simulate locally so they
+settle). Result: two driven cars **deflect off each other**, and ramming a
+**parked** car moves it identically for everyone (the host is authoritative;
+non-host clients see it react ~1 RTT late). `remote` cars set their body to the
+network transform **with an estimated velocity** (`setNetworkState` derives it
+from the position delta, clamped) so a ram transfers momentum instead of merely
+depenetrating. Two players can't drive the same car (`isRemoteOccupied` blocks
+entry). Remaining limit: each driver is still authoritative over their own
+car, so a head-on between two *driven* cars is resolved slightly differently on
+each screen (positions reconcile to each car's owner).
 
 ### The fleet
 `World.js` spawns **4 cars** on the roads around the origin (N/E/S/W), each

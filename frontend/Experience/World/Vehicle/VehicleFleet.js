@@ -100,19 +100,17 @@ export default class VehicleFleet {
 
     // ─── remote-driver bookkeeping (called from Player on network updates) ─────
 
+    // Driver bookkeeping only — Player._applyCarAuthority() sets each car's
+    // actual mode from (who drives it / who the host is).
     occupyCar(index, playerId) {
         const car = this.cars[index];
-        if (!car) return;
-        car.remoteDriverId = playerId;
-        car.setMode('remote');
+        if (car) car.remoteDriverId = playerId;
     }
 
     releaseCar(index, playerId = null) {
         const car = this.cars[index];
-        if (!car) return;
-        if (playerId == null || car.remoteDriverId === playerId) {
+        if (car && (playerId == null || car.remoteDriverId === playerId)) {
             car.remoteDriverId = null;
-            if (car.mode === 'remote') car.setMode('idle');
         }
     }
 

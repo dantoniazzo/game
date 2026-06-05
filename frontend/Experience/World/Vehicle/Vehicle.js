@@ -59,9 +59,12 @@ export default class Vehicle {
             brake: false,
         };
 
-        // Latest network transform (used in "remote" mode)
+        // Latest network transform (used in "remote" mode), plus an estimated
+        // linear velocity so a remote car rams others with real momentum.
         this._netPos = new THREE.Vector3();
         this._netQuat = new THREE.Quaternion();
+        this._netVel = new THREE.Vector3();
+        this._netStamp = null;
         this._hasNet = false;
 
         // Camera state read by Camera.js each frame
@@ -300,7 +303,27 @@ export default class Vehicle {
     // ─── network sync (called by Player when a remote player drives this car) ──
 
     setNetworkState(posObj, quatObj) {
-        this._netPos.set(posObj.position_x, posObj.position_y, posObj.position_z);
+        const px = posObj.position_x;
+        const py = posObj.position_y;
+        const pz = posObj.position_z;
+
+        // Estimate velocity from the position delta so the body carries momentum
+        // into collisions (otherwise a remote car would just depenetrate others).
+        const now =
+            typeof performance !== "undefined" ? performance.now() : Date.now();
+        if (this._hasNet && this._netStamp != null) {
+            const dt = (now - this._netStamp) / 1000;
+            if (dt > 0.0001) {
+                this._netVel.set(
+                    (px - this._netPos.x) / dt,
+                    (py - this._netPos.y) / dt,
+                    (pz - this._netPos.z) / dt,
+                );
+            }
+        }
+        this._netStamp = now;
+
+        this._netPos.set(px, py, pz);
         this._netQuat.set(
             quatObj.quaternion_x, quatObj.quaternion_y,
             quatObj.quaternion_z, quatObj.quaternion_w,
@@ -353,9 +376,20 @@ export default class Vehicle {
             this.wheelMeshes[i].quaternion.copy(quat);
         }
 
+        // Clamp the estimated velocity so a network hiccup can't fling the body.
+        const MAX_V = 60;
+        let vx = this._netVel.x;
+        let vy = this._netVel.y;
+        let vz = this._netVel.z;
+        const sp = Math.hypot(vx, vy, vz);
+        if (sp > MAX_V) {
+            const s = MAX_V / sp;
+            vx *= s; vy *= s; vz *= s;
+        }
+
         this.chassisBody.setTranslation({ x: pos.x,  y: pos.y,  z: pos.z  }, true);
         this.chassisBody.setRotation   ({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
-        this.chassisBody.setLinvel     ({ x: 0, y: 0, z: 0 }, true);
+        this.chassisBody.setLinvel     ({ x: vx, y: vy, z: vz }, true);
         this.chassisBody.setAngvel     ({ x: 0, y: 0, z: 0 }, true);
     }
 

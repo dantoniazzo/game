@@ -73,8 +73,8 @@ export default class Player {
     // Seed the vehicle camera at the current camera position so there's no jump
     this.currentVehicle.cameraPosition.copy(this.camera.perspectiveCamera.position);
 
-    // Take local control of this car
-    this.currentVehicle.setMode("local");
+    // Take local control of this car (recompute every car's authority)
+    this._applyCarAuthority();
     this.fleet.showEnterPrompt(false);
     this.fleet.showExitPrompt(true);
   }
@@ -97,8 +97,6 @@ export default class Player {
     this.player.collider.end.y += this.player.height;
     this.player.velocity.set(0, 0, 0);
 
-    // Release local control (car goes idle)
-    this.currentVehicle.setMode("idle");
     if (this.fleet) this.fleet.showExitPrompt(false);
 
     // Switch camera back to player mode
@@ -106,6 +104,29 @@ export default class Player {
 
     this.currentVehicle = null;
     this.currentVehicleIndex = -1;
+
+    // The car I left is now parked — host simulates it, everyone else mirrors
+    this._applyCarAuthority();
+  }
+
+  // Decide each car's mode from who's driving it and who the host is:
+  //   • I'm driving it           → "local"  (I simulate + broadcast it)
+  //   • another player drives it → "remote" (kinematic from their broadcast)
+  //   • parked (nobody driving)  → host simulates + broadcasts it ("idle");
+  //     every other client mirrors it ("remote"). Before the host is known,
+  //     simulate locally ("idle") so cars settle onto their suspension.
+  _applyCarAuthority() {
+    if (!this.fleet) return;
+    for (let k = 0; k < this.fleet.cars.length; k++) {
+      const car = this.fleet.cars[k];
+      if (this.currentVehicleIndex === k) {
+        car.setMode("local");
+      } else if (car.remoteDriverId != null) {
+        car.setMode("remote");
+      } else {
+        car.setMode(this._hostKnown && !this.isHost ? "remote" : "idle");
+      }
+    }
   }
 
   initPlayer() {
@@ -114,6 +135,12 @@ export default class Player {
     this.fleet = null;
     this.currentVehicle = null;
     this.currentVehicleIndex = -1;
+
+    // Multiplayer car authority: the server names one client the "host", which
+    // simulates + broadcasts every parked (un-driven) car so all clients agree.
+    this.isHost = false;
+    this.hostId = null;
+    this._hostKnown = false;
 
     this.player.body = this.camera.perspectiveCamera;
     this.player.animation = "idle";
@@ -207,7 +234,36 @@ export default class Player {
       }
     });
 
-    this.socket.on("playerData", (playerData) => {
+    // Server names one client the authority for all parked cars.
+    this.socket.on("hostId", (id) => {
+      this.hostId = id;
+      this.isHost = id === this.socket.id;
+      this._hostKnown = true;
+      this._applyCarAuthority();
+    });
+
+    // Transforms of parked cars, broadcast by the host. Non-host clients render
+    // them so every client sees identical positions for un-driven cars.
+    this.socket.on("carData", (cars) => {
+      if (this.isHost || !this.fleet) return;
+      for (const c of cars) {
+        this.fleet.setRemoteState(
+          c.id,
+          { position_x: c.px, position_y: c.py, position_z: c.pz },
+          { quaternion_x: c.qx, quaternion_y: c.qy, quaternion_z: c.qz, quaternion_w: c.qw },
+        );
+      }
+    });
+
+    this.socket.on("playerData", (playerData, hid) => {
+      // Learn the current host from every broadcast — the one-shot "hostId"
+      // event can fire before this client's listeners are attached.
+      if (hid != null && (hid !== this.hostId || !this._hostKnown)) {
+        this.hostId = hid;
+        this.isHost = hid === this.socket.id;
+        this._hostKnown = true;
+      }
+
       for (let player of playerData) {
         if (player.id !== this.socket.id) {
           this.scene.traverse((child) => {
@@ -282,6 +338,9 @@ export default class Player {
           }
         }
       }
+
+      // Recompute every car's authority now that drivers may have changed
+      this._applyCarAuthority();
     });
 
     this.socket.on("removePlayer", (id) => {
@@ -290,7 +349,10 @@ export default class Player {
 
       // If this player was driving a car, free it so it can be used again
       const _leftV = this.otherPlayers[id]._prevVehicle ?? -1;
-      if (_leftV >= 0 && this.fleet) this.fleet.releaseCar(_leftV, id);
+      if (_leftV >= 0 && this.fleet) {
+        this.fleet.releaseCar(_leftV, id);
+        this._applyCarAuthority();
+      }
 
       this.otherPlayers[id].model.nametag.material.dispose();
       this.otherPlayers[id].model.nametag.geometry.dispose();
@@ -344,6 +406,19 @@ export default class Player {
           inVehicle: false,
           vehicleId: -1,
         });
+      }
+
+      // As host, broadcast every parked car so all clients agree on its pose
+      if (this.isHost && this.fleet) {
+        const cars = [];
+        for (let k = 0; k < this.fleet.cars.length; k++) {
+          const car = this.fleet.cars[k];
+          if (car.mode !== "idle") continue;
+          const t = car.chassisBody.translation();
+          const r = car.chassisBody.rotation();
+          cars.push({ id: k, px: t.x, py: t.y, pz: t.z, qx: r.x, qy: r.y, qz: r.z, qw: r.w });
+        }
+        if (cars.length) this.socket.emit("updateCars", cars);
       }
     }, 20);
   }

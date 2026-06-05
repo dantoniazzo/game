@@ -64,6 +64,7 @@ chatNameSpace.on("connection", (socket) => {
 const updateNameSpace = io.of("/update");
 
 const connectedSockets = new Map();
+let hostId = null; // the client authoritative for all parked (un-driven) cars
 
 updateNameSpace.on("connection", (socket) => {
     socket.userData = {
@@ -78,6 +79,16 @@ updateNameSpace.on("connection", (socket) => {
     connectedSockets.set(socket.id, socket);
 
     console.log(`${socket.id} has connected to update namespace`);
+
+    // Designate a host (authority for parked cars) if there isn't one, and
+    // tell everyone who it is. Relay the host's parked-car transforms to all
+    // other clients so they all see identical positions for un-driven cars.
+    if (hostId === null) hostId = socket.id;
+    updateNameSpace.emit("hostId", hostId);
+
+    socket.on("updateCars", (cars) => {
+        socket.broadcast.emit("carData", cars);
+    });
 
     socket.on("setID", () => {
         updateNameSpace.emit("setID", socket.id);
@@ -96,6 +107,15 @@ updateNameSpace.on("connection", (socket) => {
         console.log(`${socket.id} has disconnected`);
         connectedSockets.delete(socket.id);
         updateNameSpace.emit("removePlayer", socket.id);
+
+        // If the host left, hand authority for parked cars to another client
+        if (socket.id === hostId) {
+            hostId =
+                connectedSockets.size > 0
+                    ? connectedSockets.keys().next().value
+                    : null;
+            updateNameSpace.emit("hostId", hostId);
+        }
     });
 
     socket.on("initPlayer", (player) => {
@@ -146,7 +166,9 @@ updateNameSpace.on("connection", (socket) => {
         if (socket.userData.name === "" || socket.userData.avatarSkin === "") {
             return;
         } else {
-            updateNameSpace.emit("playerData", playerData);
+            // hostId rides along so every client always knows the current host,
+            // even if it missed the one-shot "hostId" event on connect.
+            updateNameSpace.emit("playerData", playerData, hostId);
         }
     }, 20);
 });
