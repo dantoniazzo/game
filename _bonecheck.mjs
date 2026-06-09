@@ -1,0 +1,13 @@
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
+import fs from "fs";
+const buf = fs.readFileSync("public/models/shooter-pack/walking.fbx");
+const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset+buf.byteLength);
+const g = new FBXLoader().parse(ab, "");
+const bones = []; g.traverse(o=>{ if(o.isBone) bones.push(o.name); });
+const clip = g.animations[0];
+const trackBones = clip.tracks.filter(t=>t.name.endsWith(".quaternion")).map(t=>t.name.replace(/\.quaternion$/,""));
+const boneSet = new Set(bones);
+const matched = trackBones.filter(b=>boneSet.has(b)).length;
+console.log("fbx bones:", bones.length, "| quat tracks:", trackBones.length, "| track bones found in skeleton:", matched + "/" + trackBones.length);
+console.log("sample bone:", bones.find(b=>/Spine$/.test(b)), "| sample track bone:", trackBones.find(b=>/Spine$/.test(b)));
+console.log("hips bind present:", boneSet.has(trackBones.find(b=>/Hips$/.test(b))));

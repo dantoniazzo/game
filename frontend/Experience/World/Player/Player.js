@@ -6,6 +6,7 @@ import nipplejs from "nipplejs";
 import elements from "../../Utils/functions/elements.js";
 
 import Avatar from "./Avatar.js";
+import { unregisterAvatar } from "../Combat/ShooterAnimations.js";
 
 const JUMP_ANIMS = ["jump", "running-jump"];
 const CROSSFADE_DURATION = 0.2;
@@ -35,12 +36,167 @@ export default class Player {
     this.setPlayerSocket();
     this.setJoyStick();
     this.addEventListeners();
+    this.setupCombatHUD();
   }
 
   // ─── vehicle interface ──────────────────────────────────────────────────
 
   setFleet(fleet) {
     this.fleet = fleet;
+  }
+
+  setProjectiles(projectiles) {
+    this.projectiles = projectiles;
+  }
+
+  // ─── combat HUD ────────────────────────────────────────────────────────────
+
+  setupCombatHUD() {
+    this.hud = {
+      root: document.querySelector(".combat-hud"),
+      fill: document.querySelector(".health-hud__fill"),
+      num: document.querySelector(".health-hud__num"),
+      respawn: document.querySelector(".respawn-overlay"),
+      respawnBtn: document.querySelector(".respawn-card__btn"),
+      selector: document.querySelector(".weapon-selector"),
+      selHand: document.querySelector('.weapon-slot[data-weapon="hand"]'),
+      selGun: document.querySelector('.weapon-slot[data-weapon="gun"]'),
+    };
+    if (this.hud.respawnBtn) {
+      this.hud.respawnBtn.addEventListener("click", () => this.respawn());
+    }
+  }
+
+  // ─── weapon selector (hand / gun) ───────────────────────────────────────────
+
+  setWeaponMode(mode) {
+    if (mode === this.weaponMode) return;
+    this.weaponMode = mode;
+    if (this.avatar) this.avatar.setWeaponMode(mode);
+    // crosshair is gated on gun mode via this class
+    if (this.hud?.root) this.hud.root.classList.toggle("gun-mode", mode === "gun");
+  }
+
+  showWeaponSelector() {
+    const sel = this.hud?.selector;
+    if (!sel) return;
+    sel.classList.remove("hidden");
+    this.hud.selHand?.classList.toggle("is-active", this.weaponMode === "hand");
+    this.hud.selGun?.classList.toggle("is-active", this.weaponMode === "gun");
+    clearTimeout(this._selTimeout);
+    this._selTimeout = setTimeout(() => sel.classList.add("hidden"), 1500);
+  }
+
+  showCombatHUD(visible) {
+    if (this.hud?.root) this.hud.root.classList.toggle("hidden", !visible);
+  }
+
+  updateHealthHUD() {
+    const pct = Math.max(0, this.player.health) / this.maxHealth;
+    if (this.hud?.fill) {
+      this.hud.fill.style.width = pct * 100 + "%";
+      this.hud.fill.style.background =
+        pct > 0.5
+          ? "linear-gradient(90deg,#2fbf6a,#8ee05a)"
+          : pct > 0.25
+            ? "linear-gradient(90deg,#f0a93a,#f5c860)"
+            : "linear-gradient(90deg,#e2453a,#ff7a6e)";
+    }
+    if (this.hud?.num) {
+      this.hud.num.textContent = String(Math.max(0, Math.round(this.player.health)));
+    }
+  }
+
+  // ─── shooting ──────────────────────────────────────────────────────────────
+
+  fireWeapon() {
+    const cam = this.camera.perspectiveCamera;
+    const fwd = new THREE.Vector3();
+    cam.getWorldDirection(fwd);
+
+    // Fire from the avatar's chest toward a far point along the camera ray so
+    // bullets converge on the crosshair.
+    const origin = this.avatar.avatar.position.clone();
+    origin.y += 1.4;
+    const aim = cam.position.clone().addScaledVector(fwd, 200);
+    const dir = aim.sub(origin).normalize();
+
+    this.projectiles.fireLocal(origin, dir);
+    this._firingUntil = performance.now() + this.firingDuration;
+  }
+
+  // Remote players the local bullets can hit (alive + on foot).
+  collectTargets() {
+    const list = [];
+    for (const id in this.otherPlayers) {
+      const rp = this.otherPlayers[id];
+      if (!rp.model || !rp.position) continue;
+      if ((rp._prevVehicle ?? -1) >= 0) continue; // driving a car
+      if ((rp.health ?? 100) <= 0) continue; // already down
+      list.push({
+        id,
+        center: new THREE.Vector3(
+          rp.position.position_x,
+          rp.position.position_y + 1.2,
+          rp.position.position_z,
+        ),
+      });
+    }
+    return list;
+  }
+
+  // ─── health / death / respawn ───────────────────────────────────────────────
+
+  takeDamage(amount) {
+    if (this.isDead) return;
+    this.player.health = Math.max(0, this.player.health - amount);
+    this.updateHealthHUD();
+    if (this.player.health <= 0) this.die();
+  }
+
+  die() {
+    if (this.isDead) return;
+    this.isDead = true;
+    this.player.health = 0;
+    this.updateHealthHUD();
+
+    if (this.inVehicle) this.exitVehicle();
+
+    // Play + broadcast the death animation (others see it via the animation field)
+    this.player.animation = "dying";
+    if (this.avatar) {
+      this.avatar.ensureDying();
+      this.avatar.animation.play("dying", 0.15);
+    }
+
+    // Free the cursor and show the respawn prompt
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.camera.pointerLockEnabled = false;
+    this.showCombatHUD(false);
+    if (this.hud?.respawn) this.hud.respawn.classList.remove("hidden");
+  }
+
+  respawn() {
+    if (!this.isDead) return;
+    this.isDead = false;
+    this.player.health = this.maxHealth;
+    this.updateHealthHUD();
+
+    const spawnPos = new THREE.Vector3(0, 3, 0);
+    this.player.collider.start.copy(spawnPos);
+    this.player.collider.end.copy(spawnPos);
+    this.player.collider.end.y += this.player.height;
+    this.player.velocity.set(0, 0, 0);
+
+    this.player.animation = "idle";
+    if (this.avatar) {
+      this.avatar.resetFromDeath();
+      this.avatar.animation.play("idle", 0.2);
+    }
+
+    if (this.hud?.respawn) this.hud.respawn.classList.add("hidden");
+    this.showCombatHUD(true);
+    this.camera.pointerLockEnabled = true; // re-locks on next canvas click
   }
 
   enterVehicle() {
@@ -77,6 +233,7 @@ export default class Player {
     this._applyCarAuthority();
     this.fleet.showEnterPrompt(false);
     this.fleet.showExitPrompt(true);
+    this.hud?.root?.classList.add("in-vehicle"); // hide crosshair while driving
   }
 
   exitVehicle() {
@@ -98,6 +255,7 @@ export default class Player {
     this.player.velocity.set(0, 0, 0);
 
     if (this.fleet) this.fleet.showExitPrompt(false);
+    this.hud?.root?.classList.remove("in-vehicle");
 
     // Switch camera back to player mode
     this.camera.exitVehicleMode();
@@ -141,6 +299,18 @@ export default class Player {
     this.isHost = false;
     this.hostId = null;
     this._hostKnown = false;
+
+    // Combat
+    this.maxHealth = 100;
+    this.player.health = 100;
+    this.isDead = false;
+    this.projectiles = null;
+    this._lastFire = 0;
+    this.fireCooldown = 180; // ms between shots
+    this._firingUntil = 0; // play the "firing" anim until this timestamp
+    this.firingDuration = 350; // ms the firing pose holds per shot
+    this.weaponMode = "hand"; // "hand" (no gun) | "gun" (shooter mode)
+    this._lastWheel = 0;
 
     this.player.body = this.camera.perspectiveCamera;
     this.player.animation = "idle";
@@ -231,6 +401,8 @@ export default class Player {
         this.player.avatarSkin = skin;
         this.avatar = new Avatar(this.resources.items[skin], this.scene);
         this.updatePlayerSocket();
+        this.showCombatHUD(true);
+        this.updateHealthHUD();
       }
     });
 
@@ -253,6 +425,20 @@ export default class Player {
           { quaternion_x: c.qx, quaternion_y: c.qy, quaternion_z: c.qz, quaternion_w: c.qw },
         );
       }
+    });
+
+    // Another player fired — draw a cosmetic tracer (no damage on this client).
+    this.socket.on("playerShoot", (d) => {
+      if (!this.projectiles) return;
+      this.projectiles.spawnRemote(
+        new THREE.Vector3(d.ox, d.oy, d.oz),
+        new THREE.Vector3(d.dx, d.dy, d.dz),
+      );
+    });
+
+    // One of my bullets hit me (per the shooter); apply the damage to myself.
+    this.socket.on("hitByPlayer", (damage) => {
+      this.takeDamage(damage);
     });
 
     this.socket.on("playerData", (playerData, hid) => {
@@ -309,6 +495,15 @@ export default class Player {
             };
             rp.animation = { animation: player.animation };
 
+            // ── health (drives the floating bar above their head) ─────────
+            rp.health = Number.isFinite(player.health) ? player.health : 100;
+            if (rp.model && rp.model.healthBar) {
+              rp.model.healthBar.set(Math.max(0, rp.health) / 100);
+            }
+            if (rp.model && rp.model.setWeaponMode) {
+              rp.model.setWeaponMode(player.weaponMode === "gun" ? "gun" : "hand");
+            }
+
             // ── which car (if any) this player is driving ────────────────
             const prevV = rp._prevVehicle ?? -1;
             const nowV = Number.isInteger(player.vehicleId) ? player.vehicleId : -1;
@@ -320,6 +515,7 @@ export default class Player {
                 // Driving a fleet car — hide their avatar, mark the car remote
                 rp.model.avatar.visible = false;
                 rp.model.nametag.visible = false;
+                if (rp.model.healthBar) rp.model.healthBar.sprite.visible = false;
                 if (this.fleet) this.fleet.occupyCar(nowV, player.id);
                 // If I happen to be in that same car, step out
                 if (this.inVehicle && this.currentVehicleIndex === nowV) this.exitVehicle();
@@ -327,6 +523,7 @@ export default class Player {
                 // Back on foot — restore their avatar
                 rp.model.avatar.visible = true;
                 rp.model.nametag.visible = true;
+                if (rp.model.healthBar) rp.model.healthBar.sprite.visible = true;
               }
               rp._prevVehicle = nowV;
             }
@@ -353,6 +550,12 @@ export default class Player {
         this.fleet.releaseCar(_leftV, id);
         this._applyCarAuthority();
       }
+
+      if (this.otherPlayers[id].model.healthBar) {
+        this.scene.remove(this.otherPlayers[id].model.healthBar.sprite);
+        this.otherPlayers[id].model.healthBar.dispose();
+      }
+      unregisterAvatar(this.otherPlayers[id].model);
 
       this.otherPlayers[id].model.nametag.material.dispose();
       this.otherPlayers[id].model.nametag.geometry.dispose();
@@ -396,6 +599,9 @@ export default class Player {
           avatarSkin: this.player.avatarSkin,
           inVehicle: true,
           vehicleId: this.currentVehicleIndex,
+          health: this.player.health,
+          dead: this.isDead,
+          weaponMode: this.weaponMode,
         });
       } else {
         this.socket.emit("updatePlayer", {
@@ -405,6 +611,9 @@ export default class Player {
           avatarSkin: this.player.avatarSkin,
           inVehicle: false,
           vehicleId: -1,
+          health: this.player.health,
+          dead: this.isDead,
+          weaponMode: this.weaponMode,
         });
       }
 
@@ -488,6 +697,27 @@ export default class Player {
     if (e.code === "Space") this.actions.jump = false;
   };
 
+  onMouseDown = (e) => {
+    if (e.button !== 0) return; // left click only
+    if (!document.pointerLockElement) return; // only while locked into the game
+    if (this.inVehicle || this.isDead || !this.avatar || !this.projectiles) return;
+    if (this.weaponMode !== "gun") return; // only shoot with the gun equipped
+
+    const now = performance.now();
+    if (now - this._lastFire < this.fireCooldown) return;
+    this._lastFire = now;
+    this.fireWeapon();
+  };
+
+  onWheel = () => {
+    if (!this.avatar || this.isDead || this.inVehicle) return;
+    const now = performance.now();
+    if (now - this._lastWheel < 200) return; // one notch per toggle
+    this._lastWheel = now;
+    this.setWeaponMode(this.weaponMode === "gun" ? "hand" : "gun");
+    this.showWeaponSelector();
+  };
+
   playerCollisions() {
     const result = this.octree.capsuleIntersect(this.player.collider);
     this.player.onFloor = false;
@@ -536,6 +766,8 @@ export default class Player {
   addEventListeners() {
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keyup", this.onKeyUp);
+    document.addEventListener("mousedown", this.onMouseDown);
+    document.addEventListener("wheel", this.onWheel, { passive: true });
 
     if (this.domElements.jumpButton) {
       this.domElements.jumpButton.addEventListener("touchstart", (e) => {
@@ -699,7 +931,10 @@ export default class Player {
         rp.position.position_z,
       );
 
-      rp.model.animation.play(rp.animation.animation);
+      const rpAnim = rp.animation.animation;
+      if (rp._wasDying && rpAnim !== "dying") rp.model.resetFromDeath();
+      rp._wasDying = rpAnim === "dying";
+      rp.model.animation.play(rpAnim);
       rp.model.animation.update(this.time.delta);
 
       rp.model.avatar.quaternion.set(
@@ -714,6 +949,14 @@ export default class Player {
         rp.position.position_y + 2.1,
         rp.position.position_z,
       );
+
+      if (rp.model.healthBar) {
+        rp.model.healthBar.sprite.position.set(
+          rp.position.position_x,
+          rp.position.position_y + 1.85,
+          rp.position.position_z,
+        );
+      }
     }
   }
 
@@ -794,9 +1037,15 @@ export default class Player {
       this.standingJump = -1;
     }
 
+    const firing = performance.now() < this._firingUntil;
     let desired;
     if (inJump) {
       desired = this.jumpAnim;
+    } else if (firing && this.isMoving()) {
+      // Run-and-gun: legs keep moving, upper body fires (layered in Avatar).
+      desired = this.actions.run ? "firing-run" : "firing-walk";
+    } else if (firing) {
+      desired = "firing";
     } else if (this.isMoving()) {
       desired = this.actions.run ? "run" : "walk";
     } else {
@@ -842,6 +1091,14 @@ export default class Player {
   }
 
   update() {
+    // Dead: freeze movement; keep the death animation playing and other
+    // players updating until the player respawns.
+    if (this.isDead) {
+      if (this.avatar) this.avatar.animation.update(this.time.delta);
+      this.updateOtherPlayers();
+      return;
+    }
+
     // While in the vehicle, still update other players' avatars but skip
     // all player movement / animation
     if (this.inVehicle) {

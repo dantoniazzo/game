@@ -75,6 +75,9 @@ updateNameSpace.on("connection", (socket) => {
         avatarSkin: "",
         inVehicle: false,
         vehicleId: -1,
+        health: 100,
+        dead: false,
+        weaponMode: "hand",
     };
     connectedSockets.set(socket.id, socket);
 
@@ -88,6 +91,17 @@ updateNameSpace.on("connection", (socket) => {
 
     socket.on("updateCars", (cars) => {
         socket.broadcast.emit("carData", cars);
+    });
+
+    // Combat: relay a fired shot to everyone else (cosmetic tracer), and relay
+    // a hit to just the victim, who applies the damage to their own health.
+    socket.on("shoot", (data) => {
+        socket.broadcast.emit("playerShoot", data);
+    });
+
+    socket.on("playerHit", ({ targetId, damage } = {}) => {
+        const target = connectedSockets.get(targetId);
+        if (target) target.emit("hitByPlayer", damage, socket.id);
     });
 
     socket.on("setID", () => {
@@ -136,6 +150,11 @@ updateNameSpace.on("connection", (socket) => {
             ? player.vehicleId
             : -1;
         socket.userData.inVehicle = socket.userData.vehicleId >= 0;
+        socket.userData.health = Number.isFinite(player.health)
+            ? player.health
+            : 100;
+        socket.userData.dead = !!player.dead;
+        socket.userData.weaponMode = player.weaponMode === "gun" ? "gun" : "hand";
     });
 
     setInterval(() => {
@@ -159,6 +178,9 @@ updateNameSpace.on("connection", (socket) => {
                     avatarSkin: socket.userData.avatarSkin,
                     inVehicle: socket.userData.inVehicle,
                     vehicleId: socket.userData.vehicleId,
+                    health: socket.userData.health,
+                    dead: socket.userData.dead,
+                    weaponMode: socket.userData.weaponMode,
                 });
             }
         }

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with this repository. It doubles as a **handoff document**: it is written so a fresh session (e.g. on another device) can pick up with zero prior context.
 
-> **Last substantive update:** 2026-06-02 — added the **GTA VI–style Welcome Screen / main menu** (the new entry point). See the [Welcome Screen / Main Menu](#welcome-screen--main-menu) section; that is the most recent work and the most likely thing to keep iterating on. The prior feature was the **Park / custom-shader grass / daytime environment** ([section](#park-grass--daytime-environment)).
+> **Last substantive update:** 2026-06-08 — added the **combat system**: left-click visible projectiles, network-synced health with floating bars + a HUD bar, and a death → respawn flow with a `dying.fbx` animation. Player locomotion now uses the **shooter-pack** clips (walk / run / running-jump / firing). See [Combat — shooting, health & death](#combat--shooting-health--death). Prior major work: multi-car fleet + multiplayer ([Vehicles](#vehicles--fleet--multiplayer)), the [character roster](#characters--player-models), and the [welcome screen](#welcome-screen--main-menu).
 
 ---
 
@@ -245,6 +245,68 @@ car** so tints don't bleed). Edit the `carSpawns` array in
 `World._tryCreateVehicle()` to change count/positions/colours. The per-car
 lil-gui tuning panel is now opt-in (`debugGUI`, default off) so 4 cars don't
 stack 4 panels.
+
+---
+
+## Combat — shooting, health & death
+
+Left-click fires visible projectiles; every player has synced health (floating
+bar above their head + a DOM HUD bar for the local player) and a death → respawn
+flow. Code lives in `World/Combat/`.
+
+### Files
+| File | Role |
+| --- | --- |
+| `World/Combat/Projectiles.js` | Visible bullets. **Local** bullets are authoritative for damage (segment-vs-sphere hit → `playerHit`); other players' shots arrive as cosmetic tracers. |
+| `World/Combat/HealthBar.js` | Canvas→sprite health bar billboarded above each remote avatar. |
+| `World/Combat/ShooterAnimations.js` | Loads only the **shooter-pack** clips used in **gun mode** (`idle` / `walk` / `run` / `running-jump` / `firing`), applies them (retargeted) to every registered avatar's `gunActions`. |
+| `World/Combat/DyingAnimation.js` | Loads `public/models/dying.fbx` (Mixamo death). Non-fatal if missing. |
+| `styles/components/combat.scss` | HUD CSS: crosshair, local health bar, "Wasted" respawn overlay. Markup is in `index.html`. |
+
+### Weapon modes (hand / gun) — mouse scroll
+Scrolling toggles a GTA-style selector between **Hand** (default — the
+character's own animations, no crosshair, can't shoot) and **Gun** (shooter
+mode). Each `Avatar` holds two action sets: `animation.actions` (the character's
+own clips) and `animation.gunActions` (shooter-pack clips incl. the rifle idle);
+`Avatar._actionFor(name)` picks per `weaponMode`, and `setWeaponMode()` re-plays
+the current state in the new set. `weaponMode` rides in `updatePlayer` /
+`playerData`, so remote avatars animate in the matching set. The crosshair is
+gated by the `.combat-hud.gun-mode` class and firing is gated on gun mode
+(`Player.onWheel` / `setWeaponMode`).
+
+### Shooting (visible projectiles)
+On `mousedown` (on foot, alive, pointer-locked, **gun equipped**) `Player.fireWeapon()` spawns a
+bullet from the avatar's chest toward the crosshair (`Projectiles.fireLocal`) and
+broadcasts `shoot`. Each frame `Projectiles.update` moves bullets and — for
+**local** bullets only — segment-vs-sphere tests them against remote players
+(`Player.collectTargets`); a hit emits `playerHit {targetId, damage:25}`.
+`server.js` relays `shoot`→`playerShoot` (cosmetic tracer for everyone else) and
+`playerHit`→`hitByPlayer` (only to the victim).
+
+### Health & authority
+Each player owns their own health (100), mirroring the car authority model. When
+you receive `hitByPlayer` you lower your **own** health (`takeDamage`) and
+broadcast it; everyone renders the floating bar from `playerData.health`, so it's
+always consistent. `health` + `dead` ride in `updatePlayer` / `playerData`.
+
+### Death / respawn (chosen behaviour: stay down until click)
+At 0 HP `Player.die()` sets animation `"dying"` (broadcast → others play it too),
+exits any vehicle, frees the cursor and shows the **Wasted** overlay. Clicking
+**Respawn** → `Player.respawn()` teleports to spawn, restores 100 HP, and calls
+`Avatar.resetFromDeath()` (stops the death action + restores the bind hip pose so
+the body stands again rather than staying collapsed).
+
+### Animation retargeting — `Avatar._retargetClip()`
+Remaps a Mixamo clip's bone names onto each character's own skeleton by swapping
+the bone-name prefix (`mixamorig` → `mixamorig:` / `mixamorig12:` / `""`).
+- **Locomotion + firing** are **rotation-only** (root translation dropped → no sliding) and **retargeted by bind delta**: each bone's rotation is re-expressed as `targetBind · inverse(sourceBind) · clipLocal`, which cancels the bind-pose differences between the FBX shooter rig and the GLB skeleton — both the ~90° root (Hips) pitch and the residual forward lean / left-yaw. `sourceBind` is captured from the FBX rig (`ShooterAnimations.js`); `targetBind` is each avatar's bind pose (`_bindQuats`, captured before any clip is applied).
+- **Dying** keeps the hip-position track, **scaled by `avatarHipBindY / clipStandingHipY`**, so the body collapses to the ground. This auto-scale was the fix for the earlier "floating head-down" death (rotation-only kept the hips at standing height); it works regardless of the FBX's unit scale (these FBX hips are ~205 units standing).
+- `idle` and the standing `jump` still come from each character's **own** embedded GLB clips.
+
+### Knobs / next steps
+- Shooter-pack files live in `public/models/shooter-pack/`; the name→file mapping is the `SOURCES` table in `ShooterAnimations.js` (idle / walk / run / running-jump / firing — gun mode only). Death clip path is in `DyingAnimation.js` (`/models/dying.fbx`).
+- Tunables: `Projectiles.js` (`DAMAGE`, `SPEED`, `LIFETIME`, `HIT_RADIUS`); `Player` (`fireCooldown`, `firingDuration`, `maxHealth`).
+- Run-and-gun: firing **while moving** layers the **upper body** (firing) over **lower-body** walk/run using masked clips (`animation.gunUpper` / `gunLower`, driven by `Avatar._playFiringMove` + `_setUpper`); the state is broadcast as `firing-run` / `firing-walk` so remotes layer it too. Firing **while standing** plays the full-body firing clip. The standing `jump` uses each character's own clip in both modes.
 
 ---
 

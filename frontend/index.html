@@ -78,6 +78,40 @@
 
         <!-- <button class="switch-camera-view"></button> -->
 
+        <!-- Combat HUD (crosshair + local player health) -->
+        <div class="combat-hud hidden">
+            <div class="crosshair"></div>
+
+            <!-- Weapon selector (scroll to switch) -->
+            <div class="weapon-selector hidden">
+                <div class="weapon-slot is-active" data-weapon="hand">
+                    <span class="weapon-slot__icon">&#9995;</span>
+                    <span class="weapon-slot__label">Hand</span>
+                </div>
+                <div class="weapon-slot" data-weapon="gun">
+                    <span class="weapon-slot__icon">&#128299;</span>
+                    <span class="weapon-slot__label">Gun</span>
+                </div>
+            </div>
+
+            <div class="health-hud">
+                <span class="health-hud__heart">&#10084;</span>
+                <div class="health-hud__bar">
+                    <div class="health-hud__fill"></div>
+                </div>
+                <span class="health-hud__num">100</span>
+            </div>
+        </div>
+
+        <!-- Respawn overlay (shown when the local player dies) -->
+        <div class="respawn-overlay hidden">
+            <div class="respawn-card">
+                <div class="respawn-card__title">Wasted</div>
+                <div class="respawn-card__sub">You were taken down.</div>
+                <button class="respawn-card__btn">Respawn</button>
+            </div>
+        </div>
+
         <!-- Chat Box -->
         <div class="chat-box">
             <div class="chat-container"></div>

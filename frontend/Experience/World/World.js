@@ -9,6 +9,9 @@ import Player from "./Player/Player.js";
 import Environment from "./Environment.js";
 import Compass from "./Compass.js";
 import VehicleFleet from "./Vehicle/VehicleFleet.js";
+import Projectiles from "./Combat/Projectiles.js";
+import { loadDyingAnimation } from "./Combat/DyingAnimation.js";
+import { loadShooterAnimations } from "./Combat/ShooterAnimations.js";
 import CityBlock from "./CityBlock.js";
 import Park from "./Park/Park.js";
 
@@ -26,6 +29,7 @@ export default class World extends EventEmitter {
 
         this.player = null;
         this.fleet = null;
+        this.projectiles = null;
 
         this._rapierReady = false;
         this._resourcesReady = false;
@@ -39,6 +43,16 @@ export default class World extends EventEmitter {
                 this.player = new Player();
                 this.environment = new Environment();
                 this.compass = new Compass();
+
+                // Combat: visible projectiles + the (lazy, non-fatal) death anim
+                this.projectiles = new Projectiles({
+                    scene: this.experience.scene,
+                    socket: this.experience.socket,
+                    collectTargets: () => this.player.collectTargets(),
+                });
+                this.player.setProjectiles(this.projectiles);
+                loadDyingAnimation();
+                loadShooterAnimations();
             }
             this._resourcesReady = true;
             this._tryCreateVehicle();
@@ -130,6 +144,7 @@ export default class World extends EventEmitter {
 
     update() {
         if (this.player) this.player.update();
+        if (this.projectiles) this.projectiles.update(this.experience.time.delta);
         if (this.fleet) this.fleet.update(this.experience.time.delta);
         if (this.compass) this.compass.update();
         if (this.park) this.park.update();
