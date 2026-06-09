@@ -75,6 +75,28 @@ export default class Player {
     if (this.avatar) this.avatar.setWeaponMode(mode);
     // crosshair is gated on gun mode via this class
     if (this.hud?.root) this.hud.root.classList.toggle("gun-mode", mode === "gun");
+    if (mode !== "gun") this.setAim(false); // can't aim without the gun
+  }
+
+  // Over-the-shoulder aim, toggled by holding the right mouse button.
+  setAim(on) {
+    if (on && (this.weaponMode !== "gun" || this.inVehicle || this.isDead)) return;
+    if (on === this.aiming) return;
+    this.aiming = on;
+    this.camera.setAimMode(on);
+    if (this.hud?.root) this.hud.root.classList.toggle("aiming", on);
+  }
+
+  // While aiming, the avatar always faces the camera/aim direction (so A/D
+  // strafe instead of turning the body).
+  faceCameraForward() {
+    if (!this.avatar) return;
+    const cameraAngle = Math.atan2(
+      this.player.body.position.x - this.avatar.avatar.position.x,
+      this.player.body.position.z - this.avatar.avatar.position.z,
+    );
+    this.targetRotation.setFromAxisAngle(this.upVector, cameraAngle + Math.PI);
+    this.avatar.avatar.quaternion.rotateTowards(this.targetRotation, 0.5);
   }
 
   showWeaponSelector() {
@@ -159,6 +181,7 @@ export default class Player {
     this.isDead = true;
     this.player.health = 0;
     this.updateHealthHUD();
+    this.setAim(false);
 
     if (this.inVehicle) this.exitVehicle();
 
@@ -209,6 +232,7 @@ export default class Player {
     this.inVehicle = true;
     this.currentVehicle = near.car;
     this.currentVehicleIndex = near.index;
+    this.setAim(false);
 
     // Hide the player avatar
     if (this.avatar) this.avatar.avatar.visible = false;
@@ -311,6 +335,7 @@ export default class Player {
     this.firingDuration = 350; // ms the firing pose holds per shot
     this.weaponMode = "hand"; // "hand" (no gun) | "gun" (shooter mode)
     this._lastWheel = 0;
+    this.aiming = false; // holding RMB → over-the-shoulder aim
 
     this.player.body = this.camera.perspectiveCamera;
     this.player.animation = "idle";
@@ -698,15 +723,24 @@ export default class Player {
   };
 
   onMouseDown = (e) => {
-    if (e.button !== 0) return; // left click only
+    if (e.button === 2) {
+      // right click → aim (over-the-shoulder). Requires the gun equipped.
+      this.setAim(true);
+      return;
+    }
+    if (e.button !== 0) return; // left click to fire
     if (!document.pointerLockElement) return; // only while locked into the game
     if (this.inVehicle || this.isDead || !this.avatar || !this.projectiles) return;
-    if (this.weaponMode !== "gun") return; // only shoot with the gun equipped
+    if (!this.aiming) return; // must be aiming (hold RMB) to shoot
 
     const now = performance.now();
     if (now - this._lastFire < this.fireCooldown) return;
     this._lastFire = now;
     this.fireWeapon();
+  };
+
+  onMouseUp = (e) => {
+    if (e.button === 2) this.setAim(false);
   };
 
   onWheel = () => {
@@ -767,6 +801,7 @@ export default class Player {
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keyup", this.onKeyUp);
     document.addEventListener("mousedown", this.onMouseDown);
+    document.addEventListener("mouseup", this.onMouseUp);
     document.addEventListener("wheel", this.onWheel, { passive: true });
 
     if (this.domElements.jumpButton) {
@@ -1111,7 +1146,8 @@ export default class Player {
       this.updateAvatarPosition();
       this.updateAvatarRotation();
       this.updateDesiredAnimation();
-      this.updateCameraPosition();
+      if (this.aiming) this.faceCameraForward();
+      else this.updateCameraPosition();
       this.updateOtherPlayers();
 
       // Show/hide "Press F to enter" prompt based on proximity

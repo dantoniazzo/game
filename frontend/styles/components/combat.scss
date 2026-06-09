@@ -49,8 +49,8 @@
     }
 }
 
-// Crosshair appears only with the gun equipped (and not while driving)
-.combat-hud.gun-mode:not(.in-vehicle) .crosshair {
+// Crosshair appears only while aiming (holding RMB), and not while driving
+.combat-hud.aiming:not(.in-vehicle) .crosshair {
     display: block;
 }
 

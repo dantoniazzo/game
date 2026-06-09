@@ -2,6 +2,12 @@ import * as THREE from "three";
 import Experience from "./Experience.js";
 import { OrbitControls } from "../Experience/Utils/CustomOrbitControls.js";
 
+// Scratch vectors for the over-the-shoulder aim camera.
+const _F = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _pivot = new THREE.Vector3();
+
 export default class Camera {
     constructor() {
         this.experience = new Experience();
@@ -64,6 +70,15 @@ export default class Camera {
         this.MIN_VERTICAL = 0.1;
         this.MAX_VERTICAL = 0.51;
 
+        // Over-the-shoulder aim mode (held right mouse button)
+        this.aimMode = false;
+        this._savedVertical = this.angles.vertical;
+        this.AIM_DISTANCE = 2.0; // camera distance behind the player
+        this.AIM_SIDE = 0.7; // shift right so the player sits on the left
+        this.AIM_UP = 0.25; // raise the pivot toward the head
+        this.AIM_MIN_VERTICAL = -1.2; // look well up (rooftops) …
+        this.AIM_MAX_VERTICAL = 1.2; // … and down
+
         this._cameraPos = new THREE.Vector3();
         this._lookAt = new THREE.Vector3();
 
@@ -91,6 +106,22 @@ export default class Camera {
         });
 
         this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
+
+    setAimMode(on) {
+        if (!this.angles) return; // desktop pointer-lock only
+        if (on === this.aimMode) return;
+        this.aimMode = on;
+        if (on) {
+            this._savedVertical = this.angles.vertical;
+            this.angles.vertical = 0; // start level
+        } else {
+            this.angles.vertical = THREE.MathUtils.clamp(
+                this._savedVertical,
+                this.MIN_VERTICAL,
+                this.MAX_VERTICAL
+            );
+        }
     }
 
     enableOrbitControls() {
@@ -152,18 +183,52 @@ export default class Camera {
 
     updatePointerLockCamera() {
         if (this.mouseMovement.x !== 0 || this.mouseMovement.y !== 0) {
+            const minV = this.aimMode ? this.AIM_MIN_VERTICAL : this.MIN_VERTICAL;
+            const maxV = this.aimMode ? this.AIM_MAX_VERTICAL : this.MAX_VERTICAL;
             this.angles.horizontal -=
                 this.mouseMovement.x * this.MOUSE_SENSITIVITY;
             this.angles.vertical = THREE.MathUtils.clamp(
                 this.angles.vertical +
                     this.mouseMovement.y * this.MOUSE_SENSITIVITY,
-                this.MIN_VERTICAL,
-                this.MAX_VERTICAL
+                minV,
+                maxV
             );
         }
 
-        const { horizontal: theta, vertical: phi } = this.angles;
         const { x, y, z } = this.target;
+
+        if (this.aimMode) {
+            // Over-the-shoulder: camera close behind, shifted to its right so
+            // the player sits on the left of the screen; aim direction (F)
+            // carries pitch so you can fire up at rooftops.
+            const theta = this.angles.horizontal;
+            const pitch = -this.angles.vertical; // mouse up → aim up
+            const cosP = Math.cos(pitch);
+            _F.set(
+                -Math.sin(theta) * cosP,
+                Math.sin(pitch),
+                -Math.cos(theta) * cosP
+            ).normalize();
+            _up.set(0, 1, 0);
+            _right.crossVectors(_F, _up).normalize();
+            _pivot.set(x, y + this.AIM_UP, z);
+
+            this._cameraPos
+                .copy(_pivot)
+                .addScaledVector(_F, -this.AIM_DISTANCE)
+                .addScaledVector(_right, this.AIM_SIDE);
+            this.perspectiveCamera.position.copy(this._cameraPos);
+
+            this._lookAt
+                .copy(_pivot)
+                .addScaledVector(_F, 8)
+                .addScaledVector(_right, this.AIM_SIDE);
+            this.perspectiveCamera.lookAt(this._lookAt);
+            return;
+        }
+
+        const theta = this.angles.horizontal;
+        const phi = this.angles.vertical;
         const centerY = y + this.LOOK_AT_HEIGHT;
         const cosPhi = Math.cos(phi);
 

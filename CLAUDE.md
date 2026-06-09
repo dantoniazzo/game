@@ -274,6 +274,15 @@ the current state in the new set. `weaponMode` rides in `updatePlayer` /
 gated by the `.combat-hud.gun-mode` class and firing is gated on gun mode
 (`Player.onWheel` / `setWeaponMode`).
 
+### Aim mode (hold right mouse) — `Player.setAim` / `Camera.setAimMode`
+Holding **RMB** (gun equipped) enters an over-the-shoulder aim: the camera pulls
+in close and shifts to its right so the player sits on the **left** of the
+screen, and the vertical look range widens (`AIM_MIN/MAX_VERTICAL` ≈ ±1.2 rad)
+so you can fire up at rooftops. While aiming, the avatar always faces the
+camera/aim direction (`Player.faceCameraForward`), so **A/D strafe** instead of
+turning the body (movement is already camera-relative). The crosshair is shown
+via `.combat-hud.aiming`, and **firing requires aiming** (hold RMB, then LMB).
+
 ### Shooting (visible projectiles)
 On `mousedown` (on foot, alive, pointer-locked, **gun equipped**) `Player.fireWeapon()` spawns a
 bullet from the avatar's chest toward the crosshair (`Projectiles.fireLocal`) and
@@ -306,7 +315,7 @@ the bone-name prefix (`mixamorig` → `mixamorig:` / `mixamorig12:` / `""`).
 ### Knobs / next steps
 - Shooter-pack files live in `public/models/shooter-pack/`; the name→file mapping is the `SOURCES` table in `ShooterAnimations.js` (idle / walk / run / running-jump / firing — gun mode only). Death clip path is in `DyingAnimation.js` (`/models/dying.fbx`).
 - Tunables: `Projectiles.js` (`DAMAGE`, `SPEED`, `LIFETIME`, `HIT_RADIUS`); `Player` (`fireCooldown`, `firingDuration`, `maxHealth`).
-- Run-and-gun: firing **while moving** layers the **upper body** (firing) over **lower-body** walk/run using masked clips (`animation.gunUpper` / `gunLower`, driven by `Avatar._playFiringMove` + `_setUpper`); the state is broadcast as `firing-run` / `firing-walk` so remotes layer it too. Firing **while standing** plays the full-body firing clip. The standing `jump` uses each character's own clip in both modes.
+- Run-and-gun: firing **while moving** layers the **upper body** (firing) over **lower-body** walk/run using masked clips (`animation.gunUpper` / `gunLower`, driven by `Avatar._playFiringMove` + `_setUpper`); the state is broadcast as `firing-run` / `firing-walk` so remotes layer it too. Firing **while standing** plays the full-body firing clip. The standing `jump` uses each character's own clip in both modes. While strafing in aim mode the legs still play the forward walk/run — dedicated side-step clips (`shooter-pack/strafe*.fbx`) aren't wired yet.
 
 ---
 
